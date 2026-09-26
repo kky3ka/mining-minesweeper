@@ -22,7 +22,7 @@ export const DEFAULT_CONFIG: Readonly<GameConfig> = {
   height: 10,
   treasureCount: 8,
   mineCount: 6,
-  maxStamina: 20,
+  maxStamina: 30,
   digCost: 1,
   treasureDigCost: 5,
   mineDamage: 5,
@@ -39,9 +39,9 @@ export class MiningBoard {
   stamina: number
   readonly config: Readonly<GameConfig>
 
-  constructor(config: Readonly<GameConfig> = DEFAULT_CONFIG) {
+  constructor(config: Readonly<GameConfig> = DEFAULT_CONFIG, initialStamina = config.maxStamina) {
     this.config = config
-    this.stamina = config.maxStamina
+    this.stamina = Math.min(config.maxStamina, Math.max(0, initialStamina))
     const { width, height } = config
     if (width < 3 || height < 3 || config.treasureCount < 0 || config.mineCount < 0 ||
       config.maxStamina <= 0 || config.digCost <= 0 || config.treasureDigCost <= 0 || config.mineDamage < 0 ||
@@ -106,7 +106,6 @@ export class MiningBoard {
     cell.revealed = true
     if (this.stamina <= 0) {
       this.status = 'lost'
-      this.cells.forEach(tile => { if (tile.kind === 'mine') tile.revealed = true })
     } else if (cell.kind === 'stairs') {
       this.stairsFound = true
     } else if (cell.kind !== 'mine' && cell.number === 0) {
