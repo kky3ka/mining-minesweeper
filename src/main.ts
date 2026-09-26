@@ -1,10 +1,11 @@
 import Phaser from 'phaser'
-import { ExpeditionState } from './ExpeditionState'
+import { ExpeditionState, MAX_DUNGEON_FLOORS } from './ExpeditionState'
 import { DEFAULT_CONFIG, MiningBoard } from './MiningBoard'
 import './style.css'
 
 const GAP = 3
 
+// Phaser のシーンは入力と描画を担当し、盤面ルールの判定は MiningBoard に任せる。
 class MiningScene extends Phaser.Scene {
   private expedition = new ExpeditionState()
   private board!: MiningBoard
@@ -12,12 +13,17 @@ class MiningScene extends Phaser.Scene {
   private characterMarker!: Phaser.GameObjects.Container
   private baseLayer!: Phaser.GameObjects.Container
   private stairsPanel!: Phaser.GameObjects.Container
+  private digConfirmPanel!: Phaser.GameObjects.Container
+  private failurePanel!: Phaser.GameObjects.Container
   private staminaText!: Phaser.GameObjects.Text
   private statusText!: Phaser.GameObjects.Text
   private costPreviewText!: Phaser.GameObjects.Text
   private storedTreasureText!: Phaser.GameObjects.Text
+  private greatTreasureText!: Phaser.GameObjects.Text
+  private digConfirmationText!: Phaser.GameObjects.Text
   private tileSize = 56
   private characterIndex = 0
+  private pendingDigIndex: number | null = null
 
   constructor() { super('mining') }
 
@@ -41,8 +47,11 @@ class MiningScene extends Phaser.Scene {
     this.costPreviewText = this.add.text(this.scale.width / 2, 54, '', {
       fontFamily: 'sans-serif', fontSize: '13px', color: '#b9c8bd', align: 'center',
     }).setOrigin(0.5, 0)
+    // 拠点・階段選択・危険マス確認は盤面の上に重ねる独立した UI レイヤー。
     this.createBaseScreen()
     this.createStairsPanel()
+    this.createDigConfirmPanel()
+    this.createFailurePanel()
     this.boardLayer.setVisible(false)
     this.characterMarker.setVisible(false)
     this.staminaText.setVisible(false)
@@ -51,6 +60,7 @@ class MiningScene extends Phaser.Scene {
     this.layoutOverlays()
     this.layoutBoard()
     this.scale.on('resize', () => {
+      // Phaser の表示サイズ変更に合わせて HUD、モーダル、盤面を再配置する。
       this.staminaText.setPosition(this.scale.width / 2, 9)
       this.statusText.setPosition(this.scale.width / 2, 32)
       this.costPreviewText.setPosition(this.scale.width / 2, 54)
@@ -62,20 +72,25 @@ class MiningScene extends Phaser.Scene {
   }
 
   private createBaseScreen(): void {
+    // 拠点は探索画面と切り替えて表示し、保管済みの宝と出発操作をまとめる。
     this.baseLayer = this.add.container(this.scale.width / 2, this.scale.height / 2)
-    this.baseLayer.add(this.add.rectangle(0, 0, 330, 270, 0x233732, 0.98).setStrokeStyle(2, 0xc49a53))
-    this.baseLayer.add(this.add.text(0, -82, '採掘者の拠点', {
+    this.baseLayer.add(this.add.rectangle(0, 0, 330, 300, 0x233732, 0.98).setStrokeStyle(2, 0xc49a53))
+    this.baseLayer.add(this.add.text(0, -94, '採掘者の拠点', {
       fontFamily: 'sans-serif', fontSize: '28px', fontStyle: 'bold', color: '#f4ead3',
     }).setOrigin(0.5))
-    this.storedTreasureText = this.add.text(0, -24, '', {
+    this.storedTreasureText = this.add.text(0, -35, '', {
       fontFamily: 'sans-serif', fontSize: '18px', color: '#f6d878',
     }).setOrigin(0.5)
     this.baseLayer.add(this.storedTreasureText)
-    this.baseLayer.add(this.add.text(0, 17, '宝物を持って帰還すると、ここに保管されます', {
+    this.baseLayer.add(this.add.text(0, 5, '宝物を持って帰還すると、ここに保管されます', {
       fontFamily: 'sans-serif', fontSize: '13px', color: '#c8d1c8', align: 'center',
     }).setOrigin(0.5))
-    const button = this.add.rectangle(0, 82, 230, 58, 0xb87a38).setStrokeStyle(2, 0xf0c16e).setInteractive({ useHandCursor: true })
-    const buttonLabel = this.add.text(0, 82, '探索に出発', {
+    this.greatTreasureText = this.add.text(0, 43, '', {
+      fontFamily: 'sans-serif', fontSize: '16px', color: '#f6d878',
+    }).setOrigin(0.5)
+    this.baseLayer.add(this.greatTreasureText)
+    const button = this.add.rectangle(0, 98, 230, 58, 0xb87a38).setStrokeStyle(2, 0xf0c16e).setInteractive({ useHandCursor: true })
+    const buttonLabel = this.add.text(0, 98, '探索に出発', {
       fontFamily: 'sans-serif', fontSize: '20px', fontStyle: 'bold', color: '#fff8e9',
     }).setOrigin(0.5)
     button.on('pointerdown', () => this.beginExpedition())
@@ -84,6 +99,7 @@ class MiningScene extends Phaser.Scene {
   }
 
   private createStairsPanel(): void {
+    // 階段発見後も同じ階を続ける、次の階へ進む、帰還する選択肢を出す。
     this.stairsPanel = this.add.container(this.scale.width / 2, this.scale.height / 2)
     const background = this.add.rectangle(0, 0, 340, 280, 0x233732, 0.98).setStrokeStyle(2, 0xc49a53).setInteractive()
     this.stairsPanel.add(background)
@@ -102,6 +118,56 @@ class MiningScene extends Phaser.Scene {
     this.stairsPanel.setVisible(false)
   }
 
+  private createDigConfirmPanel(): void {
+    // 印のある宝・地雷を掘る前に、プレイヤーが危険を確認できるようにする。
+    this.digConfirmPanel = this.add.container(this.scale.width / 2, this.scale.height / 2)
+    const background = this.add.rectangle(0, 0, 340, 260, 0x233732, 0.98).setStrokeStyle(2, 0xc49a53).setInteractive()
+    this.digConfirmPanel.add(background)
+    this.digConfirmPanel.add(this.add.text(0, -88, 'このマスを掘りますか？', {
+      fontFamily: 'sans-serif', fontSize: '21px', fontStyle: 'bold', color: '#f4ead3',
+    }).setOrigin(0.5))
+    this.digConfirmPanel.add(this.add.text(0, -48, '宝物か地雷が埋まっています', {
+      fontFamily: 'sans-serif', fontSize: '15px', color: '#c8d1c8',
+    }).setOrigin(0.5))
+    this.digConfirmationText = this.add.text(0, -15, '', {
+      fontFamily: 'sans-serif', fontSize: '16px', color: '#f6d878',
+    }).setOrigin(0.5)
+    this.digConfirmPanel.add(this.digConfirmationText)
+    this.addDigConfirmButton('掘る', 38, () => this.confirmDig())
+    this.addDigConfirmButton('やめる', 94, () => this.cancelDig())
+    this.digConfirmPanel.setVisible(false)
+  }
+
+  private createFailurePanel(): void {
+    // 探索失敗を盤面上に知らせ、ボタン操作で拠点へ戻れるようにする。
+    this.failurePanel = this.add.container(this.scale.width / 2, this.scale.height / 2)
+    this.failurePanel.add(this.add.rectangle(0, 0, 340, 220, 0x233732, 0.98).setStrokeStyle(2, 0xc49a53).setInteractive())
+    this.failurePanel.add(this.add.text(0, -62, '探索失敗', {
+      fontFamily: 'sans-serif', fontSize: '26px', fontStyle: 'bold', color: '#ff8a76',
+    }).setOrigin(0.5))
+    this.failurePanel.add(this.add.text(0, -20, 'スタミナが尽きてしまった。', {
+      fontFamily: 'sans-serif', fontSize: '16px', color: '#f4ead3',
+    }).setOrigin(0.5))
+    const button = this.add.rectangle(0, 54, 230, 48, 0xb87a38).setStrokeStyle(2, 0xf0c16e)
+      .setInteractive({ useHandCursor: true })
+    const label = this.add.text(0, 54, '拠点に戻る', {
+      fontFamily: 'sans-serif', fontSize: '18px', fontStyle: 'bold', color: '#fff8e9',
+    }).setOrigin(0.5)
+    button.on('pointerdown', () => this.returnToBaseAfterFailure())
+    this.failurePanel.add([button, label])
+    this.failurePanel.setVisible(false)
+  }
+
+  private addDigConfirmButton(label: string, y: number, onClick: () => void): void {
+    const button = this.add.rectangle(0, y, 230, 44, 0x53685c).setStrokeStyle(1, 0xd4c29b)
+      .setInteractive({ useHandCursor: true })
+    const text = this.add.text(0, y, label, {
+      fontFamily: 'sans-serif', fontSize: '16px', color: '#fff8e9',
+    }).setOrigin(0.5)
+    button.on('pointerdown', onClick)
+    this.digConfirmPanel.add([button, text])
+  }
+
   private addChoiceButton(label: string, y: number, onClick: () => void): void {
     const button = this.add.rectangle(0, y, 250, 46, 0x53685c).setStrokeStyle(1, 0xd4c29b)
       .setInteractive({ useHandCursor: true })
@@ -113,18 +179,24 @@ class MiningScene extends Phaser.Scene {
   }
 
   private layoutOverlays(): void {
+    // 狭い画面ではモーダルを縮小し、中央に収める。
     const scale = Math.min(1, (this.scale.width - 24) / 340)
     this.baseLayer.setPosition(this.scale.width / 2, this.scale.height / 2).setScale(scale)
     this.stairsPanel.setPosition(this.scale.width / 2, this.scale.height / 2).setScale(scale)
+    this.digConfirmPanel.setPosition(this.scale.width / 2, this.scale.height / 2).setScale(scale)
+    this.failurePanel.setPosition(this.scale.width / 2, this.scale.height / 2).setScale(scale)
   }
 
   private beginExpedition(): void {
+    // 出発ごとに新しい盤面を生成し、キャラクターをランダムな開始位置へ置く。
     this.expedition.beginExpedition()
     this.board = new MiningBoard(DEFAULT_CONFIG)
     this.characterIndex = this.board.startIndex
     this.tweens.killTweensOf(this.characterMarker)
     this.baseLayer.setVisible(false)
     this.stairsPanel.setVisible(false)
+    this.digConfirmPanel.setVisible(false)
+    this.failurePanel.setVisible(false)
     this.boardLayer.setVisible(true)
     this.characterMarker.setVisible(true)
     this.staminaText.setVisible(true)
@@ -138,6 +210,7 @@ class MiningScene extends Phaser.Scene {
 
   private updateStoredTreasureText(): void {
     this.storedTreasureText.setText(`保管中の宝物: ${this.expedition.storedTreasures} 個`)
+    this.greatTreasureText.setText(`大宝: ${this.expedition.greatTreasureObtained ? '獲得済み' : '未発見'}`)
   }
 
   private showStairsChoices(): void {
@@ -146,9 +219,22 @@ class MiningScene extends Phaser.Scene {
   }
 
   private returnToBase(): void {
+    // UIを拠点へ切り替える。探索中の盤面は次回出発時に新しく生成される。
     this.expedition.returnToBase()
+    this.showBaseScreen()
+  }
+
+  private returnToBaseAfterFailure(): void {
+    // 失敗時は今回の宝を持ち帰れないため、通常の帰還処理を通さない。
+    this.expedition.failExpedition()
+    this.showBaseScreen()
+  }
+
+  private showBaseScreen(): void {
     this.updateStoredTreasureText()
     this.stairsPanel.setVisible(false)
+    this.digConfirmPanel.setVisible(false)
+    this.failurePanel.setVisible(false)
     this.boardLayer.setVisible(false)
     this.characterMarker.setVisible(false)
     this.staminaText.setVisible(false)
@@ -159,6 +245,7 @@ class MiningScene extends Phaser.Scene {
   }
 
   private layoutBoard(): void {
+    // 画面幅からマスの大きさを決めるため、盤面サイズ変更にも追従する。
     this.tileSize = Math.min(56, (this.scale.width - 12 - GAP * (this.board.config.width - 1)) / this.board.config.width)
     this.characterMarker.setScale(this.tileSize / 56)
     const boardWidth = this.board.config.width * (this.tileSize + GAP) - GAP
@@ -166,11 +253,12 @@ class MiningScene extends Phaser.Scene {
   }
 
   private drawBoard(): void {
+    // セル状態から見た目と入力領域を作り直す。未探索セルの中身は表示しない。
     this.boardLayer.removeAll(true)
     this.board.cells.forEach((cell, index) => {
       const x = (index % this.board.config.width) * (this.tileSize + GAP)
       const y = Math.floor(index / this.board.config.width) * (this.tileSize + GAP)
-      const start = index === this.board.startIndex
+      // 開始マスも他の開示マスと同じ色にし、特別な色で位置を示さない。
       const color = cell.revealed ? 0xb6aa8c : 0x586b63
       const tile = this.add.rectangle(x, y, this.tileSize, this.tileSize, color).setOrigin(0).setStrokeStyle(2, 0x283a35)
       this.boardLayer.add(tile)
@@ -178,15 +266,17 @@ class MiningScene extends Phaser.Scene {
       if (cell.revealed) {
         if (cell.kind === 'mine') label = '✹'
         else if (cell.kind === 'treasure') label = '◆'
+        else if (cell.kind === 'greatTreasure') label = '★'
         else if (cell.kind === 'stairs') label = '⌄'
-        else if (cell.number > 0 || start) label = String(cell.number)
+        else if (cell.number > 0) label = String(cell.number)
+      // 宝・地雷の「?」印は、現在掘れる隣接マスに限って表示する。
       } else if (this.board.canAttemptDig(index) && (cell.kind === 'treasure' || cell.kind === 'mine')) {
         label = '?'
       }
       if (label) {
         const text = this.add.text(x + this.tileSize / 2, y + this.tileSize / 2, label, {
           fontFamily: 'sans-serif', fontSize: `${Math.max(14, this.tileSize * 0.43)}px`, fontStyle: 'bold',
-          color: !cell.revealed ? '#f6d878' : cell.kind === 'mine' ? '#7e201b' : cell.kind === 'treasure' ? '#fff0a8' : '#172322',
+          color: !cell.revealed ? '#f6d878' : cell.kind === 'mine' ? '#7e201b' : cell.kind === 'treasure' || cell.kind === 'greatTreasure' ? '#fff0a8' : '#172322',
         }).setOrigin(0.5)
         this.boardLayer.add(text)
       }
@@ -202,6 +292,7 @@ class MiningScene extends Phaser.Scene {
           hit.on('pointerout', () => this.showDefaultCostHint())
         }
         hit.on('pointerdown', () => {
+          // 開示済み階段は移動先ではなく、階段の選択肢を開く操作にする。
           if (cell.revealed && cell.kind === 'stairs' && this.board.stairsFound) {
             this.showStairsChoices()
             return
@@ -211,12 +302,15 @@ class MiningScene extends Phaser.Scene {
               this.statusText.setText(`スタミナ不足（必要 ${this.board.getDigCost(index)}）`).setColor('#ff8a76')
               return
             }
-            const wasStairsFound = this.board.stairsFound
-            this.board.dig(index)
-            if (cell.kind === 'treasure' && cell.revealed) this.expedition.collectTreasure()
-            this.drawBoard()
-            this.updateStatus()
-            if (!wasStairsFound && this.board.stairsFound) this.showStairsChoices()
+            if (cell.kind === 'treasure' || cell.kind === 'mine') {
+              this.pendingDigIndex = index
+              this.digConfirmationText.setText(`必要スタミナ: ${this.board.getDigCost(index)}`)
+              this.digConfirmPanel.setVisible(true)
+              this.layoutOverlays()
+              return
+            }
+            this.performDig(index)
+            return
           }
           this.characterIndex = index
           this.moveMarkerTo(index)
@@ -236,6 +330,7 @@ class MiningScene extends Phaser.Scene {
   }
 
   private moveMarkerTo(index: number): void {
+    // 画像素材を使わず、短い跳ねる tween で移動したことを伝える。
     this.tweens.killTweensOf(this.characterMarker)
     const column = index % this.board.config.width
     const row = Math.floor(index / this.board.config.width)
@@ -256,9 +351,47 @@ class MiningScene extends Phaser.Scene {
     })
   }
 
+  private confirmDig(): void {
+    const index = this.pendingDigIndex
+    this.pendingDigIndex = null
+    this.digConfirmPanel.setVisible(false)
+    if (index === null) return
+    if (!this.board.canDig(index)) {
+      this.statusText.setText(`スタミナ不足（必要 ${this.board.getDigCost(index)}）`).setColor('#ff8a76')
+      return
+    }
+    this.performDig(index)
+  }
+
+  private cancelDig(): void {
+    this.pendingDigIndex = null
+    this.digConfirmPanel.setVisible(false)
+  }
+
+  private performDig(index: number): void {
+    // モデルの採掘結果を反映し、取得物・キャラクター位置・表示を同期する。
+    const cell = this.board.cells[index]
+    this.board.dig(index)
+    if (cell.kind === 'treasure' && cell.revealed) this.expedition.collectTreasure()
+    if (this.board.greatTreasureFound) {
+      this.expedition.collectGreatTreasure()
+      this.returnToBase()
+      return
+    }
+    this.characterIndex = index
+    this.moveMarkerTo(index)
+    this.drawBoard()
+    this.updateStatus()
+    if (this.board.status === 'lost') {
+      this.failurePanel.setVisible(true)
+      this.layoutOverlays()
+      return
+    }
+  }
+
   private updateStatus(): void {
     this.staminaText.setText(
-      `地下${this.expedition.floor}階　スタミナ ${this.board.stamina}/${this.board.config.maxStamina}　今回の宝物 ${this.expedition.carriedTreasures}`,
+      `地下${this.expedition.floor}/${MAX_DUNGEON_FLOORS}階　スタミナ ${this.board.stamina}/${this.board.config.maxStamina}　今回の宝物 ${this.expedition.carriedTreasures}`,
     )
     this.showDefaultCostHint()
     if (this.board.status === 'lost') this.statusText.setText('スタミナ切れで探索失敗').setColor('#ff8a76')
@@ -267,10 +400,11 @@ class MiningScene extends Phaser.Scene {
   }
 
   private advanceFloor(): void {
+    // 現在のスタミナを引き継いで次の盤面を作り、最深階だけ大宝をゴールにする。
     const remainingStamina = this.board.stamina
-    this.expedition.descend()
+    if (!this.expedition.descend()) return
     this.stairsPanel.setVisible(false)
-    this.board = new MiningBoard(DEFAULT_CONFIG, remainingStamina)
+    this.board = new MiningBoard(DEFAULT_CONFIG, remainingStamina, this.expedition.isFinalFloor)
     this.characterIndex = this.board.startIndex
     this.tweens.killTweensOf(this.characterMarker)
     this.layoutBoard()
