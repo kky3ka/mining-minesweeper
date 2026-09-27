@@ -37,7 +37,7 @@ export const DEFAULT_CONFIG: Readonly<GameConfig> = {
   height: 10,
   treasureCount: 8,
   mineCount: 6,
-  maxStamina: 30,
+  maxStamina: 150,
   digCost: 1,
   treasureDigCost: 5,
   mineDamage: 5,
@@ -168,18 +168,17 @@ export class MiningBoard {
     } else if (cell.kind === 'stairs') {
       this.stairsFound = true
     } else if (cell.kind !== 'mine' && cell.number === 0) {
-      this.revealEmptyNeighbors(index)
+      this.revealAdjacentSafeCells(index)
     }
   }
 
-  private revealEmptyNeighbors(index: number): void {
-    // 0マスから安全な隣接マスを連鎖開示する。地雷だけは決して自動で開かない。
+  private revealAdjacentSafeCells(index: number): void {
+    // 0マスの周囲1段だけを開示し、開いた先の0マスからは連鎖させない。
     for (const neighbor of this.neighbors(index)) {
       const cell = this.cells[neighbor]
       if (cell.revealed || cell.kind === 'mine') continue
       cell.revealed = true
       if (cell.kind === 'stairs') this.stairsFound = true
-      if (cell.number === 0) this.revealEmptyNeighbors(neighbor)
     }
   }
 

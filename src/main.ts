@@ -446,8 +446,11 @@ class MiningScene extends Phaser.Scene {
       const x = (index % this.board.config.width) * (this.tileSize + GAP)
       const y = Math.floor(index / this.board.config.width) * (this.tileSize + GAP)
       // 開始マスも他の開示マスと同じ色にし、特別な色で位置を示さない。
-      const color = cell.revealed ? 0xb6aa8c : 0x586b63
-      const tile = this.add.rectangle(x, y, this.tileSize, this.tileSize, color).setOrigin(0).setStrokeStyle(2, 0x283a35)
+      const canClick = this.board.status === 'playing' && (cell.revealed || this.board.canAttemptDig(index))
+      const shouldHighlight = canClick && !cell.revealed
+      const color = cell.revealed ? 0xb6aa8c : (shouldHighlight ? 0x718673 : 0x586b63)
+      const tile = this.add.rectangle(x, y, this.tileSize, this.tileSize, color).setOrigin(0)
+        .setStrokeStyle(shouldHighlight ? 3 : 2, shouldHighlight ? 0xffd66e : 0x283a35)
       this.boardLayer.add(tile)
       let label = ''
       if (cell.revealed) {
@@ -467,7 +470,7 @@ class MiningScene extends Phaser.Scene {
         }).setOrigin(0.5)
         this.boardLayer.add(text)
       }
-      if (this.board.status === 'playing' && (cell.revealed || this.board.canAttemptDig(index))) {
+      if (canClick) {
         const hit = this.add.rectangle(x, y, this.tileSize, this.tileSize, 0xffffff, 0.001).setOrigin(0).setInteractive()
         if (!cell.revealed) {
           hit.on('pointerover', () => {

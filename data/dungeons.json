@@ -15,8 +15,8 @@
           "type": "random",
           "width": 30,
           "height": 30,
-          "mineProbability": 4,
-          "treasureProbability": 2
+          "mineProbability": 1,
+          "treasureProbability": 5
         },
         "items": [
           { "itemId": "copper_ore", "probability": 55 },
@@ -38,8 +38,8 @@
           "type": "random",
           "width": 30,
           "height": 30,
-          "mineProbability": 6,
-          "treasureProbability": 3
+          "mineProbability": 1,
+          "treasureProbability": 8
         },
         "items": [
           { "itemId": "iron_ore", "probability": 45 },
@@ -61,8 +61,8 @@
           "type": "random",
           "width": 30,
           "height": 30,
-          "mineProbability": 8,
-          "treasureProbability": 4
+          "mineProbability": 2,
+          "treasureProbability": 10
         },
         "items": [
           { "itemId": "silver_ore", "probability": 30 },
@@ -88,8 +88,8 @@
           "type": "random",
           "width": 30,
           "height": 30,
-          "mineProbability": 3,
-          "treasureProbability": 2
+          "mineProbability": 1,
+          "treasureProbability": 3
         },
         "items": [
           { "itemId": "ancient_coin", "probability": 55 },
@@ -111,8 +111,8 @@
           "type": "fixed",
           "width": 30,
           "height": 30,
-          "mineProbability": 5,
-          "treasureProbability": 3,
+          "mineProbability": 1,
+          "treasureProbability": 4,
           "mapId": "ancient_ruins_heart_room"
         },
         "items": [
@@ -135,8 +135,8 @@
           "type": "fixed",
           "width": 30,
           "height": 30,
-          "mineProbability": 7,
-          "treasureProbability": 4,
+          "mineProbability": 2,
+          "treasureProbability": 10,
           "mapId": "ancient_ruins_royal_tomb"
         },
         "items": [
@@ -163,8 +163,8 @@
           "type": "random",
           "width": 30,
           "height": 30,
-          "mineProbability": 3,
-          "treasureProbability": 2
+          "mineProbability": 1,
+          "treasureProbability": 8
         },
         "items": [
           { "itemId": "rough_crystal", "probability": 50 },
@@ -186,8 +186,8 @@
           "type": "random",
           "width": 30,
           "height": 30,
-          "mineProbability": 5,
-          "treasureProbability": 3
+          "mineProbability": 1.5,
+          "treasureProbability": 10
         },
         "items": [
           { "itemId": "rough_crystal", "probability": 30 },
@@ -209,8 +209,8 @@
           "type": "fixed",
           "width": 30,
           "height": 30,
-          "mineProbability": 7,
-          "treasureProbability": 4,
+          "mineProbability": 2,
+          "treasureProbability": 12,
           "mapId": "underground_lake_crystal_palace"
         },
         "items": [
