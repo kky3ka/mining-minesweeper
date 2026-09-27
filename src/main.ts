@@ -1,12 +1,13 @@
 import Phaser from 'phaser'
-import { ACTIVE_DUNGEON, createStageConfig, getDungeonStage, MAX_DUNGEON_FLOORS } from './DungeonData'
+import { DUNGEONS, createStageConfig, getDungeonStage, type DungeonDefinition } from './DungeonData'
 import { DEBUG_OPTIONS } from './DebugOptions'
 import { ExpeditionState } from './ExpeditionState'
+import { ITEMS, getItemName } from './ItemData'
 import { DEFAULT_CONFIG, MiningBoard } from './MiningBoard'
 import './style.css'
 
 const GAP = 3
-const VISIBLE_TILES = 20
+const VISIBLE_TILES = 15
 const HUD_HEIGHT = 96
 
 // Phaser のシーンは入力と描画を担当し、盤面ルールの判定は MiningBoard に任せる。
@@ -20,6 +21,8 @@ class MiningScene extends Phaser.Scene {
   private stairsPanel!: Phaser.GameObjects.Container
   private digConfirmPanel!: Phaser.GameObjects.Container
   private failurePanel!: Phaser.GameObjects.Container
+  private inventoryPanel!: Phaser.GameObjects.Container
+  private dungeonPanel!: Phaser.GameObjects.Container
   private staminaText!: Phaser.GameObjects.Text
   private statusText!: Phaser.GameObjects.Text
   private costPreviewText!: Phaser.GameObjects.Text
@@ -27,11 +30,20 @@ class MiningScene extends Phaser.Scene {
   private storedTreasureText!: Phaser.GameObjects.Text
   private greatTreasureText!: Phaser.GameObjects.Text
   private digConfirmationText!: Phaser.GameObjects.Text
+  private inventoryRows!: Phaser.GameObjects.Container
+  private selectedDungeonText!: Phaser.GameObjects.Text
+  private selectedDungeon: DungeonDefinition = DUNGEONS[0]
   private tileSize = 56
   private characterIndex = 0
   private pendingDigIndex: number | null = null
 
   constructor() { super('mining') }
+
+  preload(): void {
+    for (const item of ITEMS) {
+      this.load.image(item.id, `${import.meta.env.BASE_URL}assets/items/${item.icon}`)
+    }
+  }
 
   create(): void {
     this.cameras.main.setBackgroundColor('#172322')
@@ -57,14 +69,16 @@ class MiningScene extends Phaser.Scene {
       fontFamily: 'sans-serif', fontSize: '13px', color: '#ffcf8a', align: 'center',
     }).setOrigin(0.5, 0).setVisible(false)
     // 拠点・階段選択・危険マス確認は盤面の上に重ねる独立した UI レイヤー。
+    this.createInventoryPanel()
     this.createBaseScreen()
+    this.createDungeonPanel()
     this.createStairsPanel()
     this.createDigConfirmPanel()
     this.createFailurePanel()
     // 盤面カメラだけをプレイヤーに追従させ、HUDとポップアップは画面位置に固定する。
     this.uiCamera = this.cameras.add(0, 0, this.scale.width, this.scale.height, false, 'ui')
     this.cameras.main.ignore([
-      this.baseLayer, this.stairsPanel, this.digConfirmPanel, this.failurePanel,
+      this.baseLayer, this.stairsPanel, this.digConfirmPanel, this.failurePanel, this.inventoryPanel, this.dungeonPanel,
       this.staminaText, this.statusText, this.costPreviewText, this.resourceCountText,
     ])
     this.uiCamera.ignore([this.boardLayer, this.characterMarker])
@@ -94,28 +108,146 @@ class MiningScene extends Phaser.Scene {
   private createBaseScreen(): void {
     // 拠点は探索画面と切り替えて表示し、保管済みの宝と出発操作をまとめる。
     this.baseLayer = this.add.container(this.scale.width / 2, this.scale.height / 2)
-    this.baseLayer.add(this.add.rectangle(0, 0, 330, 300, 0x233732, 0.98).setStrokeStyle(2, 0xc49a53))
-    this.baseLayer.add(this.add.text(0, -94, '採掘者の拠点', {
+    this.baseLayer.add(this.add.rectangle(0, 0, 340, 400, 0x233732, 0.98).setStrokeStyle(2, 0xc49a53))
+    this.baseLayer.add(this.add.text(0, -164, '採掘者の拠点', {
       fontFamily: 'sans-serif', fontSize: '28px', fontStyle: 'bold', color: '#f4ead3',
     }).setOrigin(0.5))
-    this.storedTreasureText = this.add.text(0, -35, '', {
-      fontFamily: 'sans-serif', fontSize: '18px', color: '#f6d878',
+    this.selectedDungeonText = this.add.text(0, -122, '', {
+      fontFamily: 'sans-serif', fontSize: '18px', fontStyle: 'bold', color: '#f6d878',
     }).setOrigin(0.5)
-    this.baseLayer.add(this.storedTreasureText)
-    this.baseLayer.add(this.add.text(0, 5, '宝物を持って帰還すると、ここに保管されます', {
-      fontFamily: 'sans-serif', fontSize: '13px', color: '#c8d1c8', align: 'center',
-    }).setOrigin(0.5))
-    this.greatTreasureText = this.add.text(0, 43, '', {
+    this.baseLayer.add(this.selectedDungeonText)
+    this.storedTreasureText = this.add.text(0, -82, '', {
       fontFamily: 'sans-serif', fontSize: '16px', color: '#f6d878',
     }).setOrigin(0.5)
+    this.baseLayer.add(this.storedTreasureText)
+    this.baseLayer.add(this.add.text(0, -55, '持ち帰ったアイテムは拠点に保管されます', {
+      fontFamily: 'sans-serif', fontSize: '12px', color: '#c8d1c8', align: 'center',
+    }).setOrigin(0.5))
+    this.greatTreasureText = this.add.text(0, -28, '', {
+      fontFamily: 'sans-serif', fontSize: '14px', color: '#f6d878',
+    }).setOrigin(0.5)
     this.baseLayer.add(this.greatTreasureText)
-    const button = this.add.rectangle(0, 98, 230, 58, 0xb87a38).setStrokeStyle(2, 0xf0c16e).setInteractive({ useHandCursor: true })
-    const buttonLabel = this.add.text(0, 98, '探索に出発', {
+    const dungeonButton = this.add.rectangle(0, 18, 230, 40, 0x53685c).setStrokeStyle(1, 0xd4c29b)
+      .setInteractive({ useHandCursor: true })
+    const dungeonButtonLabel = this.add.text(0, 18, 'ダンジョンを選択', {
+      fontFamily: 'sans-serif', fontSize: '15px', color: '#fff8e9',
+    }).setOrigin(0.5)
+    dungeonButton.on('pointerdown', () => this.showDungeonSelection())
+    const inventoryButton = this.add.rectangle(0, 67, 230, 40, 0x53685c).setStrokeStyle(1, 0xd4c29b)
+      .setInteractive({ useHandCursor: true })
+    const inventoryButtonLabel = this.add.text(0, 67, 'アイテム一覧', {
+      fontFamily: 'sans-serif', fontSize: '15px', color: '#fff8e9',
+    }).setOrigin(0.5)
+    inventoryButton.on('pointerdown', () => this.showInventory())
+    const button = this.add.rectangle(0, 130, 230, 46, 0xb87a38).setStrokeStyle(2, 0xf0c16e).setInteractive({ useHandCursor: true })
+    const buttonLabel = this.add.text(0, 130, '探索に出発', {
       fontFamily: 'sans-serif', fontSize: '20px', fontStyle: 'bold', color: '#fff8e9',
     }).setOrigin(0.5)
     button.on('pointerdown', () => this.beginExpedition())
-    this.baseLayer.add([button, buttonLabel])
+    this.baseLayer.add([dungeonButton, dungeonButtonLabel, inventoryButton, inventoryButtonLabel, button, buttonLabel])
     this.updateStoredTreasureText()
+  }
+
+  private createDungeonPanel(): void {
+    this.dungeonPanel = this.add.container(this.scale.width / 2, this.scale.height / 2)
+    this.dungeonPanel.add(this.add.rectangle(0, 0, 340, 360, 0x233732, 0.99).setStrokeStyle(2, 0xc49a53).setInteractive())
+    this.dungeonPanel.add(this.add.text(0, -148, 'ダンジョン選択', {
+      fontFamily: 'sans-serif', fontSize: '23px', fontStyle: 'bold', color: '#f4ead3',
+    }).setOrigin(0.5))
+    DUNGEONS.forEach((dungeon, index) => {
+      const y = -75 + index * 62
+      const button = this.add.rectangle(0, y, 270, 50, 0x53685c).setStrokeStyle(1, 0xd4c29b)
+        .setInteractive({ useHandCursor: true })
+      const label = this.add.text(0, y, `${dungeon.name}（${dungeon.stages.length}エリア）`, {
+        fontFamily: 'sans-serif', fontSize: '16px', color: '#fff8e9',
+      }).setOrigin(0.5)
+      button.on('pointerdown', () => {
+        this.selectedDungeon = dungeon
+        this.updateBaseDungeonLabel()
+        this.dungeonPanel.setVisible(false)
+      })
+      this.dungeonPanel.add([button, label])
+    })
+    const closeButton = this.add.rectangle(0, 130, 220, 40, 0x394b43).setStrokeStyle(1, 0xc49a53)
+      .setInteractive({ useHandCursor: true })
+    const closeLabel = this.add.text(0, 130, '戻る', {
+      fontFamily: 'sans-serif', fontSize: '15px', color: '#fff8e9',
+    }).setOrigin(0.5)
+    closeButton.on('pointerdown', () => this.dungeonPanel.setVisible(false))
+    this.dungeonPanel.add([closeButton, closeLabel])
+    this.dungeonPanel.setDepth(10).setVisible(false)
+  }
+
+  private showDungeonSelection(): void {
+    this.dungeonPanel.setVisible(true)
+    this.layoutOverlays()
+  }
+
+  private updateBaseDungeonLabel(): void {
+    this.selectedDungeonText.setText(`探索先: ${this.selectedDungeon.name}`)
+  }
+
+  private createInventoryPanel(): void {
+    this.inventoryPanel = this.add.container(this.scale.width / 2, this.scale.height / 2)
+    this.inventoryPanel.add(this.add.rectangle(0, 0, 340, 480, 0x233732, 0.98).setStrokeStyle(2, 0xc49a53).setInteractive())
+    this.inventoryPanel.add(this.add.text(0, -218, 'アイテム一覧', {
+      fontFamily: 'sans-serif', fontSize: '24px', fontStyle: 'bold', color: '#f4ead3',
+    }).setOrigin(0.5))
+    this.inventoryRows = this.add.container(-145, -190)
+    this.inventoryPanel.add(this.inventoryRows)
+    const closeButton = this.add.rectangle(0, 215, 220, 42, 0x53685c).setStrokeStyle(1, 0xd4c29b)
+      .setInteractive({ useHandCursor: true })
+    const closeLabel = this.add.text(0, 215, '閉じる', {
+      fontFamily: 'sans-serif', fontSize: '16px', color: '#fff8e9',
+    }).setOrigin(0.5)
+    closeButton.on('pointerdown', () => this.inventoryPanel.setVisible(false))
+    this.inventoryPanel.add([closeButton, closeLabel])
+    // 拠点より後ろに重ならないよう、アイテム一覧をUIの前面に配置する。
+    this.inventoryPanel.setDepth(10)
+    this.inventoryPanel.setVisible(false)
+  }
+
+  private showInventory(): void {
+    this.updateInventoryList()
+    this.inventoryPanel.setVisible(true)
+    this.layoutOverlays()
+  }
+
+  private updateInventoryList(): void {
+    this.inventoryRows.removeAll(true)
+    let y = this.addInventoryHeading('【通常アイテム】', 0)
+    const ordinaryItems = Object.entries(this.expedition.storedItems).filter(([, count]) => count > 0)
+    if (ordinaryItems.length) {
+      for (const [itemId, count] of ordinaryItems) y = this.addInventoryRow(itemId, `× ${count}`, y)
+    } else {
+      y = this.addInventoryRow(null, 'まだ持ち帰ったアイテムはありません', y)
+    }
+    y += 5
+    y = this.addInventoryHeading('【大宝】', y)
+    if (this.expedition.obtainedGreatTreasureIds.length) {
+      for (const itemId of this.expedition.obtainedGreatTreasureIds) y = this.addInventoryRow(itemId, '', y)
+    } else {
+      this.addInventoryRow(null, 'まだ獲得していません', y)
+    }
+  }
+
+  private addInventoryHeading(label: string, y: number): number {
+    this.inventoryRows.add(this.add.text(0, y, label, {
+      fontFamily: 'sans-serif', fontSize: '14px', fontStyle: 'bold', color: '#f6d878',
+    }).setOrigin(0, 0))
+    return y + 22
+  }
+
+  private addInventoryRow(itemId: string | null, detail: string, y: number): number {
+    if (itemId && this.textures.exists(itemId)) {
+      this.inventoryRows.add(this.add.image(10, y + 9, itemId).setDisplaySize(18, 18))
+    }
+    const name = itemId ? getItemName(itemId) : ''
+    const label = [name, detail].filter(Boolean).join(' ')
+    this.inventoryRows.add(this.add.text(itemId ? 25 : 0, y, label || detail, {
+      fontFamily: 'sans-serif', fontSize: '13px', color: '#f4ead3', wordWrap: { width: 285 },
+    }).setOrigin(0, 0))
+    return y + 21
   }
 
   private createStairsPanel(): void {
@@ -176,6 +308,7 @@ class MiningScene extends Phaser.Scene {
     button.on('pointerdown', () => this.returnToBaseAfterFailure())
     this.failurePanel.add([button, label])
     this.failurePanel.setVisible(false)
+    this.inventoryPanel.setVisible(false)
   }
 
   private addDigConfirmButton(label: string, y: number, onClick: () => void): void {
@@ -205,6 +338,10 @@ class MiningScene extends Phaser.Scene {
     this.stairsPanel.setPosition(this.scale.width / 2, this.scale.height / 2).setScale(scale)
     this.digConfirmPanel.setPosition(this.scale.width / 2, this.scale.height / 2).setScale(scale)
     this.failurePanel.setPosition(this.scale.width / 2, this.scale.height / 2).setScale(scale)
+    const inventoryScale = Math.min(1, (this.scale.width - 24) / 340, (this.scale.height - 24) / 480)
+    this.inventoryPanel.setPosition(this.scale.width / 2, this.scale.height / 2).setScale(inventoryScale)
+    const dungeonScale = Math.min(1, (this.scale.width - 24) / 340, (this.scale.height - 24) / 360)
+    this.dungeonPanel.setPosition(this.scale.width / 2, this.scale.height / 2).setScale(dungeonScale)
   }
 
   private beginExpedition(): void {
@@ -214,6 +351,7 @@ class MiningScene extends Phaser.Scene {
     this.characterIndex = this.board.startIndex
     this.tweens.killTweensOf(this.characterMarker)
     this.baseLayer.setVisible(false)
+    this.dungeonPanel.setVisible(false)
     this.stairsPanel.setVisible(false)
     this.digConfirmPanel.setVisible(false)
     this.failurePanel.setVisible(false)
@@ -231,8 +369,10 @@ class MiningScene extends Phaser.Scene {
   }
 
   private updateStoredTreasureText(): void {
-    this.storedTreasureText.setText(`保管中の宝物: ${this.expedition.storedTreasures} 個`)
-    this.greatTreasureText.setText(`大宝: ${this.expedition.greatTreasureObtained ? '獲得済み' : '未発見'}`)
+    this.updateBaseDungeonLabel()
+    this.storedTreasureText.setText(`保管中のアイテム: ${this.expedition.storedItemCount} 個`)
+    this.greatTreasureText.setText(`大宝: ${this.expedition.obtainedGreatTreasureIds.map(getItemName).join('、') || '未獲得'}`)
+    this.updateInventoryList()
   }
 
   private showStairsChoices(): void {
@@ -257,6 +397,8 @@ class MiningScene extends Phaser.Scene {
     this.stairsPanel.setVisible(false)
     this.digConfirmPanel.setVisible(false)
     this.failurePanel.setVisible(false)
+    this.inventoryPanel.setVisible(false)
+    this.dungeonPanel.setVisible(false)
     this.boardLayer.setVisible(false)
     this.characterMarker.setVisible(false)
     this.staminaText.setVisible(false)
@@ -417,9 +559,9 @@ class MiningScene extends Phaser.Scene {
     // モデルの採掘結果を反映し、取得物・キャラクター位置・表示を同期する。
     const cell = this.board.cells[index]
     this.board.dig(index)
-    if (cell.kind === 'treasure' && cell.revealed) this.expedition.collectTreasure()
+    if (cell.kind === 'treasure' && cell.revealed && cell.itemId) this.expedition.collectTreasure(cell.itemId)
     if (this.board.greatTreasureFound) {
-      this.expedition.collectGreatTreasure()
+      if (cell.itemId) this.expedition.collectGreatTreasure(cell.itemId)
       this.returnToBase()
       return
     }
@@ -436,7 +578,7 @@ class MiningScene extends Phaser.Scene {
 
   private updateStatus(): void {
     this.staminaText.setText(
-      `地下${this.expedition.floor}/${MAX_DUNGEON_FLOORS}階　スタミナ ${this.board.stamina}/${this.board.config.maxStamina}　今回の宝物 ${this.expedition.carriedTreasures}`,
+      `地下${this.expedition.floor}/${this.selectedDungeon.stages.length}階　スタミナ ${this.board.stamina}/${this.board.config.maxStamina}　今回のアイテム ${this.expedition.carriedItemCount}`,
     )
     this.showDefaultCostHint()
     this.resourceCountText.setText(
@@ -450,7 +592,7 @@ class MiningScene extends Phaser.Scene {
   private advanceFloor(): void {
     // 現在のスタミナを引き継いで次の盤面を作り、最深階だけ大宝をゴールにする。
     const remainingStamina = this.board.stamina
-    if (!this.expedition.descend()) return
+    if (!this.expedition.descend(this.selectedDungeon.stages.length)) return
     this.stairsPanel.setVisible(false)
     this.board = this.createBoardForFloor(remainingStamina)
     this.characterIndex = this.board.startIndex
@@ -463,13 +605,13 @@ class MiningScene extends Phaser.Scene {
   }
 
   private createBoardForFloor(initialStamina: number): MiningBoard {
-    const stage = getDungeonStage(ACTIVE_DUNGEON, this.expedition.floor)
+    const stage = getDungeonStage(this.selectedDungeon, this.expedition.floor)
     const config = createStageConfig(stage, DEFAULT_CONFIG)
 
     return new MiningBoard(config, initialStamina, {
       isFinalFloor: stage.clearCondition.type === 'find_large_treasure',
       treasureItems: stage.items,
-      largeTreasureId: ACTIVE_DUNGEON.largeTreasure,
+      largeTreasureId: this.selectedDungeon.largeTreasure,
     })
   }
 

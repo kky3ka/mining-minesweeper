@@ -234,6 +234,37 @@
 
 収集・コンプリート要素として利用する。
 
+### アイテムデータ設計
+
+アイテム固有の情報は、アイテムマスターデータとして管理する。
+
+各アイテムには以下の情報を持たせる。
+
+| 項目 | 内容 |
+| --- | --- |
+| `id` | アイテムを一意に識別するID |
+| `name` | アイテム名 |
+| `type` | アイテムの種類 |
+| `rarity` | アイテムのレアリティ |
+| `sellPrice` | 売却価格 |
+| `description` | アイテムの説明文 |
+| `icon` | アイテムアイコンのファイル名 |
+| `sellable` | 売却可能かどうか |
+
+#### データ例
+
+```json
+{
+  "id": "copper_ore",
+  "name": "銅鉱石",
+  "type": "ore",
+  "rarity": "common",
+  "sellPrice": 20,
+  "description": "一般的な鉱石。",
+  "icon": "item_copper_ore.png",
+  "sellable": true
+}
+
 ---
 
 ## 8. 永続成長
@@ -754,7 +785,11 @@ probability
 id
 name
 type
+rarity
 sell_price
+description
+icon
+sellable
 ```
 
 条件については、現時点で想定されていない種類を無理に実装せず、ゲーム内容が固まった段階で必要な条件タイプを追加する。

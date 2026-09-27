@@ -1,0 +1,132 @@
+[
+  {
+    "id": "copper_ore",
+    "name": "銅鉱石",
+    "type": "ore",
+    "rarity": "common",
+    "sellPrice": 20,
+    "description": "坑道でよく見つかる銅の鉱石。",
+    "icon": "koseki_bronze.png",
+    "sellable": true
+  },
+  {
+    "id": "iron_ore",
+    "name": "鉄鉱石",
+    "type": "ore",
+    "rarity": "common",
+    "sellPrice": 35,
+    "description": "道具や装備の材料になる鉄の鉱石。",
+    "icon": "koseki_iron.png",
+    "sellable": true
+  },
+  {
+    "id": "silver_ore",
+    "name": "銀鉱石",
+    "type": "ore",
+    "rarity": "uncommon",
+    "sellPrice": 65,
+    "description": "白く輝く銀を含んだ鉱石。",
+    "icon": "koseki_silver.png",
+    "sellable": true
+  },
+  {
+    "id": "gold_ore",
+    "name": "金鉱石",
+    "type": "ore",
+    "rarity": "rare",
+    "sellPrice": 110,
+    "description": "貴重な金を含んだ鉱石。",
+    "icon": "koseki_gold.png",
+    "sellable": true
+  },
+  {
+    "id": "ancient_coin",
+    "name": "古代コイン",
+    "type": "coin",
+    "rarity": "uncommon",
+    "sellPrice": 80,
+    "description": "古代文明で使われていたコイン。",
+    "icon": "coin_gold_01.png",
+    "sellable": true
+  },
+  {
+    "id": "old_relic",
+    "name": "古びた遺物",
+    "type": "relic",
+    "rarity": "rare",
+    "sellPrice": 140,
+    "description": "古代遺跡から見つかった用途不明の遺物。",
+    "icon": "ring_bronze.png",
+    "sellable": true
+  },
+  {
+    "id": "magic_stone",
+    "name": "魔石",
+    "type": "gem",
+    "rarity": "rare",
+    "sellPrice": 180,
+    "description": "ほのかな魔力を帯びた石。",
+    "icon": "jewelry_hemisphere_red.png",
+    "sellable": true
+  },
+  {
+    "id": "rough_crystal",
+    "name": "原石",
+    "type": "gem",
+    "rarity": "common",
+    "sellPrice": 25,
+    "description": "地下湖の洞窟で採れる未加工の結晶。",
+    "icon": "jewelry_pyramid_white.png",
+    "sellable": true
+  },
+  {
+    "id": "blue_crystal",
+    "name": "青水晶",
+    "type": "gem",
+    "rarity": "uncommon",
+    "sellPrice": 90,
+    "description": "水脈の中で育った青い結晶。",
+    "icon": "koseki_crystal.png",
+    "sellable": true
+  },
+  {
+    "id": "rare_gem",
+    "name": "希少な宝石",
+    "type": "gem",
+    "rarity": "rare",
+    "sellPrice": 240,
+    "description": "めったに見つからない色鮮やかな宝石。",
+    "icon": "jewelry_ellipse_green.png",
+    "sellable": true
+  },
+  {
+    "id": "golden_nugget",
+    "name": "巨大な金塊",
+    "type": "large_treasure",
+    "rarity": "legendary",
+    "sellPrice": 0,
+    "description": "廃鉱山の最深部に眠る、ダンジョン固有の大宝。",
+    "icon": "ingot_gold.png",
+    "sellable": false
+  },
+  {
+    "id": "royal_treasure",
+    "name": "王家の秘宝",
+    "type": "large_treasure",
+    "rarity": "legendary",
+    "sellPrice": 0,
+    "description": "古代遺跡の王家の地下室に残された大宝。",
+    "icon": "treasure_red_gold_open.png",
+    "sellable": false
+  },
+  {
+    "id": "crystal_crown",
+    "name": "水晶の王冠",
+    "type": "large_treasure",
+    "rarity": "legendary",
+    "sellPrice": 0,
+    "description": "地下湖の水晶で作られた、ダンジョン固有の大宝。",
+    "icon": "crown_01_gold_red.png",
+    "sellable": false
+  }
+]
