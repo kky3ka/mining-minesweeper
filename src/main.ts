@@ -1,9 +1,13 @@
 import Phaser from 'phaser'
-import { ExpeditionState, MAX_DUNGEON_FLOORS } from './ExpeditionState'
+import { ACTIVE_DUNGEON, createStageConfig, getDungeonStage, MAX_DUNGEON_FLOORS } from './DungeonData'
+import { DEBUG_OPTIONS } from './DebugOptions'
+import { ExpeditionState } from './ExpeditionState'
 import { DEFAULT_CONFIG, MiningBoard } from './MiningBoard'
 import './style.css'
 
 const GAP = 3
+const VISIBLE_TILES = 20
+const HUD_HEIGHT = 96
 
 // Phaser のシーンは入力と描画を担当し、盤面ルールの判定は MiningBoard に任せる。
 class MiningScene extends Phaser.Scene {
@@ -11,6 +15,7 @@ class MiningScene extends Phaser.Scene {
   private board!: MiningBoard
   private boardLayer!: Phaser.GameObjects.Container
   private characterMarker!: Phaser.GameObjects.Container
+  private uiCamera!: Phaser.Cameras.Scene2D.Camera
   private baseLayer!: Phaser.GameObjects.Container
   private stairsPanel!: Phaser.GameObjects.Container
   private digConfirmPanel!: Phaser.GameObjects.Container
@@ -18,6 +23,7 @@ class MiningScene extends Phaser.Scene {
   private staminaText!: Phaser.GameObjects.Text
   private statusText!: Phaser.GameObjects.Text
   private costPreviewText!: Phaser.GameObjects.Text
+  private resourceCountText!: Phaser.GameObjects.Text
   private storedTreasureText!: Phaser.GameObjects.Text
   private greatTreasureText!: Phaser.GameObjects.Text
   private digConfirmationText!: Phaser.GameObjects.Text
@@ -29,7 +35,7 @@ class MiningScene extends Phaser.Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor('#172322')
-    this.board = new MiningBoard(DEFAULT_CONFIG)
+    this.board = this.createBoardForFloor(DEFAULT_CONFIG.maxStamina)
     this.characterIndex = this.board.startIndex
     this.boardLayer = this.add.container(0, 80)
     this.characterMarker = this.add.container(0, 0)
@@ -47,23 +53,37 @@ class MiningScene extends Phaser.Scene {
     this.costPreviewText = this.add.text(this.scale.width / 2, 54, '', {
       fontFamily: 'sans-serif', fontSize: '13px', color: '#b9c8bd', align: 'center',
     }).setOrigin(0.5, 0)
+    this.resourceCountText = this.add.text(this.scale.width / 2, 74, '', {
+      fontFamily: 'sans-serif', fontSize: '13px', color: '#ffcf8a', align: 'center',
+    }).setOrigin(0.5, 0).setVisible(false)
     // 拠点・階段選択・危険マス確認は盤面の上に重ねる独立した UI レイヤー。
     this.createBaseScreen()
     this.createStairsPanel()
     this.createDigConfirmPanel()
     this.createFailurePanel()
+    // 盤面カメラだけをプレイヤーに追従させ、HUDとポップアップは画面位置に固定する。
+    this.uiCamera = this.cameras.add(0, 0, this.scale.width, this.scale.height, false, 'ui')
+    this.cameras.main.ignore([
+      this.baseLayer, this.stairsPanel, this.digConfirmPanel, this.failurePanel,
+      this.staminaText, this.statusText, this.costPreviewText, this.resourceCountText,
+    ])
+    this.uiCamera.ignore([this.boardLayer, this.characterMarker])
     this.boardLayer.setVisible(false)
     this.characterMarker.setVisible(false)
     this.staminaText.setVisible(false)
     this.statusText.setVisible(false)
     this.costPreviewText.setVisible(false)
+    this.resourceCountText.setVisible(false)
     this.layoutOverlays()
+    this.layoutCameras()
     this.layoutBoard()
     this.scale.on('resize', () => {
       // Phaser の表示サイズ変更に合わせて HUD、モーダル、盤面を再配置する。
       this.staminaText.setPosition(this.scale.width / 2, 9)
       this.statusText.setPosition(this.scale.width / 2, 32)
       this.costPreviewText.setPosition(this.scale.width / 2, 54)
+      this.resourceCountText.setPosition(this.scale.width / 2, 74)
+      this.layoutCameras()
       this.layoutOverlays()
       this.layoutBoard()
       this.placeMarker(this.characterIndex)
@@ -190,7 +210,7 @@ class MiningScene extends Phaser.Scene {
   private beginExpedition(): void {
     // 出発ごとに新しい盤面を生成し、キャラクターをランダムな開始位置へ置く。
     this.expedition.beginExpedition()
-    this.board = new MiningBoard(DEFAULT_CONFIG)
+    this.board = this.createBoardForFloor(DEFAULT_CONFIG.maxStamina)
     this.characterIndex = this.board.startIndex
     this.tweens.killTweensOf(this.characterMarker)
     this.baseLayer.setVisible(false)
@@ -202,8 +222,10 @@ class MiningScene extends Phaser.Scene {
     this.staminaText.setVisible(true)
     this.statusText.setVisible(true)
     this.costPreviewText.setVisible(true)
+    this.resourceCountText.setVisible(DEBUG_OPTIONS.showResourceCounts)
     this.layoutBoard()
     this.placeMarker(this.characterIndex)
+    this.followCharacter()
     this.drawBoard()
     this.updateStatus()
   }
@@ -240,16 +262,39 @@ class MiningScene extends Phaser.Scene {
     this.staminaText.setVisible(false)
     this.statusText.setVisible(false)
     this.costPreviewText.setVisible(false)
+    this.resourceCountText.setVisible(false)
     this.baseLayer.setVisible(true)
     this.layoutOverlays()
   }
 
   private layoutBoard(): void {
     // 画面幅からマスの大きさを決めるため、盤面サイズ変更にも追従する。
-    this.tileSize = Math.min(56, (this.scale.width - 12 - GAP * (this.board.config.width - 1)) / this.board.config.width)
+    const availableTileWidth = (this.boardCameraSize() - 12 - GAP * (VISIBLE_TILES - 1)) / VISIBLE_TILES
+    this.tileSize = Math.min(56, availableTileWidth)
     this.characterMarker.setScale(this.tileSize / 56)
     const boardWidth = this.board.config.width * (this.tileSize + GAP) - GAP
-    this.boardLayer.setPosition((this.scale.width - boardWidth) / 2, 80)
+    const boardHeight = this.board.config.height * (this.tileSize + GAP) - GAP
+    this.boardLayer.setPosition(0, 0)
+    this.cameras.main.setBounds(0, 0, boardWidth, boardHeight)
+  }
+
+  private boardCameraSize(): number {
+    return Math.max(1, Math.min(this.scale.width - 16, this.scale.height - HUD_HEIGHT - 16))
+  }
+
+  private layoutCameras(): void {
+    const side = this.boardCameraSize()
+    const x = (this.scale.width - side) / 2
+    const y = Math.max(HUD_HEIGHT, (this.scale.height - side) / 2)
+    this.cameras.main.setViewport(x, y, side, side)
+    this.uiCamera.setViewport(0, 0, this.scale.width, this.scale.height)
+  }
+
+  private followCharacter(): void {
+    const camera = this.cameras.main
+    camera.stopFollow()
+    camera.centerOn(this.characterMarker.x, this.characterMarker.y)
+    camera.startFollow(this.characterMarker, true, 0.12, 0.12)
   }
 
   private drawBoard(): void {
@@ -394,6 +439,9 @@ class MiningScene extends Phaser.Scene {
       `地下${this.expedition.floor}/${MAX_DUNGEON_FLOORS}階　スタミナ ${this.board.stamina}/${this.board.config.maxStamina}　今回の宝物 ${this.expedition.carriedTreasures}`,
     )
     this.showDefaultCostHint()
+    this.resourceCountText.setText(
+      `配置数（デバッグ） 地雷 ${this.board.placedMineCount} / 宝物 ${this.board.placedTreasureCount}`,
+    )
     if (this.board.status === 'lost') this.statusText.setText('スタミナ切れで探索失敗').setColor('#ff8a76')
     else if (this.board.stairsFound) this.statusText.setText('階段発見！「⌄」をクリックして選択').setColor('#f6d878')
     else this.statusText.setText('隣のマスを掘って道を探そう').setColor('#f4ead3')
@@ -404,13 +452,25 @@ class MiningScene extends Phaser.Scene {
     const remainingStamina = this.board.stamina
     if (!this.expedition.descend()) return
     this.stairsPanel.setVisible(false)
-    this.board = new MiningBoard(DEFAULT_CONFIG, remainingStamina, this.expedition.isFinalFloor)
+    this.board = this.createBoardForFloor(remainingStamina)
     this.characterIndex = this.board.startIndex
     this.tweens.killTweensOf(this.characterMarker)
     this.layoutBoard()
     this.placeMarker(this.characterIndex)
+    this.followCharacter()
     this.drawBoard()
     this.updateStatus()
+  }
+
+  private createBoardForFloor(initialStamina: number): MiningBoard {
+    const stage = getDungeonStage(ACTIVE_DUNGEON, this.expedition.floor)
+    const config = createStageConfig(stage, DEFAULT_CONFIG)
+
+    return new MiningBoard(config, initialStamina, {
+      isFinalFloor: stage.clearCondition.type === 'find_large_treasure',
+      treasureItems: stage.items,
+      largeTreasureId: ACTIVE_DUNGEON.largeTreasure,
+    })
   }
 
   private showDefaultCostHint(): void {

@@ -344,12 +344,445 @@
 
 ※上記はイメージ例であり、正式な内容は未決定。
 
+## ダンジョン・探索エリアデータ設計
+
+### 概要
+
+ダンジョンに関する設定は、ゲームロジックと分離したデータとして管理する。
+
+現在はJSONファイルで管理し、将来的にPHP API + SQLデータベースへ移行できる構造を想定する。
+
+ダンジョンは複数の「探索エリア」から構成される。
+
+```text
+ダンジョン
+ ├─ 基本情報
+ ├─ 大宝
+ └─ 探索エリア
+      ├─ 進入条件
+      ├─ クリア条件
+      ├─ マップ設定
+      └─ アイテム出現設定
+```
+
+---
+
+### ダンジョンデータ
+
+ダンジョンには以下の情報を持たせる。
+
+| 項目              | 内容                     |
+| --------------- | ---------------------- |
+| `id`            | ダンジョンを一意に識別するID        |
+| `name`          | ダンジョン名                 |
+| `largeTreasure` | ダンジョン最深部で獲得する大宝のアイテムID |
+| `stages`        | 探索エリアの一覧               |
+
+#### 例
+
+```json
+{
+  "id": "old_mine",
+  "name": "廃鉱山",
+  "largeTreasure": "golden_nugget",
+  "stages": []
+}
+```
+
+---
+
+### 探索エリア
+
+ダンジョン内の各エリアは `stages` として管理する。
+
+探索エリアには以下の情報を持たせる。
+
+| 項目               | 内容                 |
+| ---------------- | ------------------ |
+| `id`             | 探索エリアを一意に識別するID    |
+| `sequence`       | ダンジョン内での進行順        |
+| `name`           | プレイヤーに表示する探索エリア名   |
+| `entryCondition` | エリアへの進入条件          |
+| `clearCondition` | エリアのクリア条件          |
+| `map`            | マップに関する設定          |
+| `items`          | その探索エリアで掘れるアイテムの一覧 |
+
+探索エリアの名称は「1階」「2階」のような階層名に限定しない。
+
+例えば、
+
+* 坑道入口
+* 第一採掘場
+* ハートの間
+* スペードの部屋
+* 地下湖
+* 王家の地下室
+
+など、ダンジョンの世界観に合わせた名称を設定できる。
+
+`sequence` はゲーム内部での進行順を管理するために使用し、表示名とは分離する。
+
+---
+
+### エリア進入条件
+
+各探索エリアには `entryCondition` を設定できる。
+
+進入条件によって、プレイヤーがそのエリアを探索できるかを判定する。
+
+基本的には条件を持たないエリアを最初の探索エリアとし、後続エリアでは前のエリアのクリアなどを条件として設定できる。
+
+#### 例
+
+```json
+"entryCondition": {
+  "type": "previous_stage_clear"
+}
+```
+
+この場合、直前の探索エリアをクリアすると進入可能になる。
+
+将来的には以下のような条件を追加できる。
+
+```text
+previous_stage_clear
+item_required
+item_count_required
+money_required
+upgrade_level_required
+large_treasure_required
+```
+
+条件を複数組み合わせる場合も想定する。
+
+例えば、
+
+```json
+"entryCondition": {
+  "type": "item_required",
+  "itemId": "ancient_key"
+}
+```
+
+のようにする。
+
+複数条件については、将来的に `all` / `any` などの条件グループを追加することで対応する。
+
+---
+
+### エリアクリア条件
+
+各探索エリアには `clearCondition` を設定する。
+
+エリアクリア後は次の探索エリアへの進入や、帰還などのゲーム進行が可能になる。
+
+#### 階段発見によるクリア
+
+現在の基本ルールでは、探索中に階段を発見すると、その探索エリアを「踏破済み」とする。
+
+```json
+"clearCondition": {
+  "type": "find_stairs"
+}
+```
+
+階段を発見した後、プレイヤーは以下を選択できる。
+
+* 現在のエリアをさらに探索する
+* 次の探索エリアへ進む
+* 拠点へ帰還する
+
+このため、「階段発見」は探索エリアのクリア条件であると同時に、安全に帰還・進行できるチェックポイントとして扱う。
+
+---
+
+### 将来的なクリア条件
+
+クリア条件は `type` によって種類を切り替えられるようにする。
+
+想定する条件：
+
+```text
+find_stairs
+find_large_treasure
+collect_item
+explore_percentage
+defeat_boss
+special_condition
+```
+
+例えば特定アイテムの取得を条件とする場合、
+
+```json
+"clearCondition": {
+  "type": "collect_item",
+  "itemId": "ancient_key"
+}
+```
+
+マップの一定割合を探索する場合、
+
+```json
+"clearCondition": {
+  "type": "explore_percentage",
+  "value": 80
+}
+```
+
+などとする。
+
+ただし、実際に使用するクリア条件はゲーム仕様の決定に合わせて追加する。
+
+---
+
+### マップ設定
+
+各探索エリアは、固定マップまたはランダムマップのどちらかを使用できる。
+
+```json
+"map": {
+  "type": "random",
+  "width": 30,
+  "height": 30,
+  "mineProbability": 5,
+  "treasureProbability": 3
+}
+```
+
+#### マップ設定項目
+
+| 項目       | 内容                   |
+| -------- | -------------------- |
+| `type`   | `random` または `fixed` |
+| `width`  | マップの横幅               |
+| `height` | マップの縦幅               |
+| `mapId`  | 固定マップを使用する場合のマップID   |
+| `mineProbability` | マップ全体に対する地雷の配置率（％） |
+| `treasureProbability` | マップ全体に対する宝物の配置率（％） |
+
+#### ランダムマップ
+
+```json
+"map": {
+  "type": "random",
+  "width": 30,
+  "height": 30,
+  "mineProbability": 5,
+  "treasureProbability": 3
+}
+```
+
+ゲーム開始時などにマップを自動生成する。
+
+同じ探索エリアでも、プレイするたびに異なるマップを生成できる。
+
+#### 固定マップ
+
+```json
+"map": {
+  "type": "fixed",
+  "width": 25,
+  "height": 25,
+  "mineProbability": 10,
+  "treasureProbability": 3,
+  "mapId": "old_mine_collapse"
+}
+```
+
+固定マップでは、別途管理されたマップデータを `mapId` で参照する。
+
+固定マップは、
+
+* 特殊な地形
+* 一本道
+* 特定位置に配置されたギミック
+* ストーリー上の重要地点
+* 特殊な大部屋
+
+などに利用する。
+
+同一ダンジョン内で固定マップとランダムマップを混在させることができる。
+
+---
+
+### アイテム出現設定
+
+各探索エリアで掘れるアイテムは `items` に登録する。
+
+```json
+"items": [
+  {
+    "itemId": "copper_ore",
+    "probability": 50
+  },
+  {
+    "itemId": "iron_ore",
+    "probability": 35
+  },
+  {
+    "itemId": "silver_ore",
+    "probability": 15
+  }
+]
+```
+
+| 項目            | 内容             |
+| ------------- | -------------- |
+| `itemId`      | アイテムマスターデータのID |
+| `probability` | その探索エリアでの出現確率(%)  |
+
+`itemId` はアイテム名そのものではなく、アイテムデータを参照するIDとする。
+
+アイテムの名前、売却価格、種類などの情報はアイテムデータ側で管理し、ダンジョンデータには重複して記録しない。
+
+各探索エリアの `probability` は、基本的に合計100%となるように設定する。
+
+---
+
+### データ例
+
+```json
+{
+  "id": "ancient_ruins_02",
+  "sequence": 2,
+  "name": "ハートの間",
+
+  "entryCondition": {
+    "type": "previous_stage_clear"
+  },
+
+  "clearCondition": {
+    "type": "find_stairs"
+  },
+
+  "map": {
+    "type": "fixed",
+    "width": 30,
+    "height": 30,
+    "mapId": "ancient_ruins_heart_room"
+  },
+
+  "items": [
+    {
+      "itemId": "ancient_coin",
+      "probability": 40
+    },
+    {
+      "itemId": "old_relic",
+      "probability": 40
+    },
+    {
+      "itemId": "magic_stone",
+      "probability": 20
+    }
+  ]
+}
+```
+
+---
+
+### 将来的なSQL構成
+
+JSONからSQLへ移行する場合は、概ね以下のテーブルへ分割する。
+
+```text
+dungeons
+    ↓
+dungeon_stages
+    ├─ dungeon_stage_entry_conditions
+    ├─ dungeon_stage_clear_conditions
+    └─ dungeon_stage_items
+        ↓
+      items
+```
+
+想定する構造は以下。
+
+#### dungeons
+
+```text
+id
+name
+large_treasure_item_id
+```
+
+#### dungeon_stages
+
+```text
+id
+dungeon_id
+sequence
+name
+map_type
+map_width
+map_height
+map_mineproberbility
+map_id
+```
+
+#### dungeon_stage_entry_conditions
+
+```text
+id
+stage_id
+condition_type
+target_id
+value
+```
+
+#### dungeon_stage_clear_conditions
+
+```text
+id
+stage_id
+condition_type
+target_id
+value
+```
+
+#### dungeon_stage_items
+
+```text
+stage_id
+item_id
+probability
+```
+
+#### items
+
+```text
+id
+name
+type
+sell_price
+```
+
+条件については、現時点で想定されていない種類を無理に実装せず、ゲーム内容が固まった段階で必要な条件タイプを追加する。
+
+---
+
+### 設計上の方針
+
+* ダンジョン固有の設定はダンジョンデータで管理する
+* アイテム固有の設定はアイテムデータで管理する
+* 探索エリアの表示名と進行順を分離する
+* 探索エリアごとにマップサイズを設定できるようにする
+* 固定マップとランダムマップを混在可能にする
+* 固定マップの実データは探索エリア設定とは分離する
+* アイテムは `itemId` で参照する
+* 各探索エリアのアイテム出現確率を個別に設定できるようにする
+* エリア進入条件とエリアクリア条件を分離する
+* 条件は `type` によって種類を識別する
+* 新しい条件タイプを追加できる構造にする
+* 将来的なSQL移行を考慮し、データ同士の関係をIDで管理する
+* 新しいダンジョンや探索エリアを追加する際、ゲームロジック側の大幅な変更を必要としない構造を目指す
+
+
 ---
 
 ## 12. キャラクター・ビジュアル
 
 - ドット絵を基本とする。
-- VRMキャラクターは使用しない。
 - キャラクターの外見カスタマイズは将来的な追加要素として検討。
 - アイテム売却で得たお金の使い道の一つとして、衣装・外見変更などを追加する可能性がある。
 - キャラクターを直接操作するアクションゲームにはしない。

@@ -1,3 +1,5 @@
+import type { ItemProbability } from './DungeonData'
+
 // マスの中身を表す。画面表示はこの値を見て決め、盤面ルール自体は Phaser に依存させない。
 export type TileKind = 'empty' | 'treasure' | 'mine' | 'stairs' | 'greatTreasure'
 
@@ -6,18 +8,27 @@ export interface Cell {
   kind: TileKind
   number: number
   revealed: boolean
+  // 宝や大宝のマスターを参照するID。表示名などはアイテムデータ側に置く。
+  itemId: string | null
 }
 
 // バランス調整に使う値をまとめる。盤面サイズを変えるときも生成処理の変更を最小限にする。
 export interface GameConfig {
   width: number
   height: number
+  // 盤面に配置する地雷・宝物の個数。ダンジョン設定ではマップ面積と出現率から算出する。
   treasureCount: number
   mineCount: number
   maxStamina: number
   digCost: number
   treasureDigCost: number
   mineDamage: number
+}
+
+export interface BoardGenerationOptions {
+  isFinalFloor?: boolean
+  treasureItems?: readonly ItemProbability[]
+  largeTreasureId?: string
 }
 
 // 試作向けの初期値。数値調整はここだけを変更すれば反映できる。
@@ -46,7 +57,20 @@ export class MiningBoard {
   stamina: number
   readonly config: Readonly<GameConfig>
 
-  constructor(config: Readonly<GameConfig> = DEFAULT_CONFIG, initialStamina = config.maxStamina, isFinalFloor = false) {
+  // マスの種類から数えるため、設定値ではなく実際に生成された個数を返す。
+  get placedMineCount(): number {
+    return this.cells.filter(cell => cell.kind === 'mine').length
+  }
+
+  get placedTreasureCount(): number {
+    return this.cells.filter(cell => cell.kind === 'treasure').length
+  }
+
+  constructor(
+    config: Readonly<GameConfig> = DEFAULT_CONFIG,
+    initialStamina = config.maxStamina,
+    options: BoardGenerationOptions = {},
+  ) {
     this.config = config
     this.stamina = Math.min(config.maxStamina, Math.max(0, initialStamina))
     const { width, height } = config
@@ -56,7 +80,7 @@ export class MiningBoard {
       throw new Error('Invalid board configuration')
     }
     // 盤面は一次元配列で持ち、座標との変換には width を使う。縦横サイズを変えても扱いやすい。
-    this.cells = Array.from({ length: width * height }, () => ({ kind: 'empty', number: 0, revealed: false }))
+    this.cells = Array.from({ length: width * height }, () => ({ kind: 'empty', number: 0, revealed: false, itemId: null }))
     const startCandidates = this.cells.map((_, index) => index).filter(index =>
       this.cells.length - this.neighbors(index).length - 1 >= config.mineCount + config.treasureCount,
     )
@@ -74,7 +98,10 @@ export class MiningBoard {
     const treasureCandidates = this.cells.map((_, index) => index)
       .filter(index => index !== this.startIndex && !adjacentToStart.has(index) && this.cells[index].kind === 'empty')
     this.shuffle(treasureCandidates)
-    for (const index of treasureCandidates.splice(0, config.treasureCount)) this.cells[index].kind = 'treasure'
+    for (const index of treasureCandidates.splice(0, config.treasureCount)) {
+      this.cells[index].kind = 'treasure'
+      this.cells[index].itemId = this.chooseItemId(options.treasureItems ?? [])
+    }
     this.cells[this.startIndex].revealed = true
 
     // 各マスの数字は隣接8マスにある宝と地雷の合計。階段は数字に含めない。
@@ -94,10 +121,11 @@ export class MiningBoard {
       .map(({ index }) => index)
     const stairsChoices = stairsCandidates.length ? stairsCandidates : fallback
     const goalIndex = stairsChoices[Math.floor(Math.random() * stairsChoices.length)]
-    if (isFinalFloor) {
+    if (options.isFinalFloor) {
       this.stairsIndex = null
       this.greatTreasureIndex = goalIndex
       this.cells[goalIndex].kind = 'greatTreasure'
+      this.cells[goalIndex].itemId = options.largeTreasureId ?? null
       for (const neighbor of this.neighbors(goalIndex)) this.cells[neighbor].number++
     } else {
       this.stairsIndex = goalIndex
@@ -174,5 +202,19 @@ export class MiningBoard {
       const j = Math.floor(Math.random() * (i + 1))
       ;[items[i], items[j]] = [items[j], items[i]]
     }
+  }
+
+  private chooseItemId(items: readonly ItemProbability[]): string | null {
+    const totalProbability = items.reduce((total, item) => total + Math.max(0, item.probability), 0)
+    if (totalProbability <= 0) return null
+
+    let roll = Math.random() * totalProbability
+    for (const item of items) {
+      roll -= Math.max(0, item.probability)
+      if (roll < 0) return item.itemId
+    }
+
+    // 浮動小数点の端数で最後まで決まらない場合も、最後の候補を使う。
+    return items[items.length - 1]?.itemId ?? null
   }
 }

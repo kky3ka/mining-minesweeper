@@ -1,0 +1,224 @@
+[
+  {
+    "id": "old_mine",
+    "name": "廃鉱山",
+    "largeTreasure": "golden_nugget",
+    "stages": [
+      {
+        "id": "old_mine_entrance",
+        "sequence": 1,
+        "name": "坑道入口",
+        "clearCondition": {
+          "type": "find_stairs"
+        },
+        "map": {
+          "type": "random",
+          "width": 30,
+          "height": 30,
+          "mineProbability": 4,
+          "treasureProbability": 2
+        },
+        "items": [
+          { "itemId": "copper_ore", "probability": 55 },
+          { "itemId": "iron_ore", "probability": 35 },
+          { "itemId": "silver_ore", "probability": 10 }
+        ]
+      },
+      {
+        "id": "old_mine_deep_shaft",
+        "sequence": 2,
+        "name": "第一採掘場",
+        "entryCondition": {
+          "type": "previous_stage_clear"
+        },
+        "clearCondition": {
+          "type": "find_stairs"
+        },
+        "map": {
+          "type": "random",
+          "width": 30,
+          "height": 30,
+          "mineProbability": 6,
+          "treasureProbability": 3
+        },
+        "items": [
+          { "itemId": "iron_ore", "probability": 45 },
+          { "itemId": "silver_ore", "probability": 35 },
+          { "itemId": "gold_ore", "probability": 20 }
+        ]
+      },
+      {
+        "id": "old_mine_treasure_vein",
+        "sequence": 3,
+        "name": "金脈の最深部",
+        "entryCondition": {
+          "type": "previous_stage_clear"
+        },
+        "clearCondition": {
+          "type": "find_large_treasure"
+        },
+        "map": {
+          "type": "random",
+          "width": 30,
+          "height": 30,
+          "mineProbability": 8,
+          "treasureProbability": 4
+        },
+        "items": [
+          { "itemId": "silver_ore", "probability": 30 },
+          { "itemId": "gold_ore", "probability": 50 },
+          { "itemId": "ancient_coin", "probability": 20 }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ancient_ruins",
+    "name": "古代遺跡",
+    "largeTreasure": "royal_treasure",
+    "stages": [
+      {
+        "id": "ancient_ruins_outer_court",
+        "sequence": 1,
+        "name": "石造りの前庭",
+        "clearCondition": {
+          "type": "find_stairs"
+        },
+        "map": {
+          "type": "random",
+          "width": 30,
+          "height": 30,
+          "mineProbability": 3,
+          "treasureProbability": 2
+        },
+        "items": [
+          { "itemId": "ancient_coin", "probability": 55 },
+          { "itemId": "old_relic", "probability": 30 },
+          { "itemId": "magic_stone", "probability": 15 }
+        ]
+      },
+      {
+        "id": "ancient_ruins_heart_room",
+        "sequence": 2,
+        "name": "ハートの間",
+        "entryCondition": {
+          "type": "previous_stage_clear"
+        },
+        "clearCondition": {
+          "type": "find_stairs"
+        },
+        "map": {
+          "type": "fixed",
+          "width": 30,
+          "height": 30,
+          "mineProbability": 5,
+          "treasureProbability": 3,
+          "mapId": "ancient_ruins_heart_room"
+        },
+        "items": [
+          { "itemId": "ancient_coin", "probability": 35 },
+          { "itemId": "old_relic", "probability": 40 },
+          { "itemId": "magic_stone", "probability": 25 }
+        ]
+      },
+      {
+        "id": "ancient_ruins_royal_tomb",
+        "sequence": 3,
+        "name": "王家の地下室",
+        "entryCondition": {
+          "type": "previous_stage_clear"
+        },
+        "clearCondition": {
+          "type": "find_large_treasure"
+        },
+        "map": {
+          "type": "fixed",
+          "width": 30,
+          "height": 30,
+          "mineProbability": 7,
+          "treasureProbability": 4,
+          "mapId": "ancient_ruins_royal_tomb"
+        },
+        "items": [
+          { "itemId": "old_relic", "probability": 35 },
+          { "itemId": "magic_stone", "probability": 45 },
+          { "itemId": "ancient_coin", "probability": 20 }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "underground_lake",
+    "name": "地下湖",
+    "largeTreasure": "crystal_crown",
+    "stages": [
+      {
+        "id": "underground_lake_shore",
+        "sequence": 1,
+        "name": "湖畔の洞窟",
+        "clearCondition": {
+          "type": "find_stairs"
+        },
+        "map": {
+          "type": "random",
+          "width": 30,
+          "height": 30,
+          "mineProbability": 3,
+          "treasureProbability": 2
+        },
+        "items": [
+          { "itemId": "rough_crystal", "probability": 50 },
+          { "itemId": "silver_ore", "probability": 30 },
+          { "itemId": "ancient_coin", "probability": 20 }
+        ]
+      },
+      {
+        "id": "underground_lake_cavern",
+        "sequence": 2,
+        "name": "地下水脈",
+        "entryCondition": {
+          "type": "previous_stage_clear"
+        },
+        "clearCondition": {
+          "type": "find_stairs"
+        },
+        "map": {
+          "type": "random",
+          "width": 30,
+          "height": 30,
+          "mineProbability": 5,
+          "treasureProbability": 3
+        },
+        "items": [
+          { "itemId": "rough_crystal", "probability": 30 },
+          { "itemId": "blue_crystal", "probability": 45 },
+          { "itemId": "magic_stone", "probability": 25 }
+        ]
+      },
+      {
+        "id": "underground_lake_crystal_palace",
+        "sequence": 3,
+        "name": "水晶の宮殿",
+        "entryCondition": {
+          "type": "previous_stage_clear"
+        },
+        "clearCondition": {
+          "type": "find_large_treasure"
+        },
+        "map": {
+          "type": "fixed",
+          "width": 30,
+          "height": 30,
+          "mineProbability": 7,
+          "treasureProbability": 4,
+          "mapId": "underground_lake_crystal_palace"
+        },
+        "items": [
+          { "itemId": "blue_crystal", "probability": 35 },
+          { "itemId": "magic_stone", "probability": 35 },
+          { "itemId": "rare_gem", "probability": 30 }
+        ]
+      }
+    ]
+  }
+]
