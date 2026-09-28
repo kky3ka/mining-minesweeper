@@ -1,6 +1,6 @@
 import { MAX_DUNGEON_FLOORS } from './DungeonData'
 
-// 進行階数の上限。最深部では階段の代わりに大宝を配置する。
+// 進行階数の初期上限。各ダンジョンの実際の上限は探索状態の呼び出し元から渡す。
 export { MAX_DUNGEON_FLOORS }
 
 /** 探索中の仮取得分と拠点に保管した分を分けて管理する。 */

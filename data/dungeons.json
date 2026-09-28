@@ -55,7 +55,7 @@
           "type": "previous_stage_clear"
         },
         "clearCondition": {
-          "type": "find_large_treasure"
+          "type": "find_stairs"
         },
         "map": {
           "type": "random",
@@ -129,7 +129,7 @@
           "type": "previous_stage_clear"
         },
         "clearCondition": {
-          "type": "find_large_treasure"
+          "type": "find_stairs"
         },
         "map": {
           "type": "fixed",
@@ -203,7 +203,7 @@
           "type": "previous_stage_clear"
         },
         "clearCondition": {
-          "type": "find_large_treasure"
+          "type": "find_stairs"
         },
         "map": {
           "type": "fixed",

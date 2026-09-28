@@ -1,7 +1,7 @@
 import type { ItemProbability } from './DungeonData'
 
 // マスの中身を表す。画面表示はこの値を見て決め、盤面ルール自体は Phaser に依存させない。
-export type TileKind = 'empty' | 'treasure' | 'mine' | 'stairs' | 'greatTreasure'
+export type TileKind = 'empty' | 'treasure' | 'mine' | 'stairs'
 
 // 1マス分のゲーム状態。未探索かどうかと、周囲の危険・宝の数を保持する。
 export interface Cell {
@@ -26,9 +26,7 @@ export interface GameConfig {
 }
 
 export interface BoardGenerationOptions {
-  isFinalFloor?: boolean
   treasureItems?: readonly ItemProbability[]
-  largeTreasureId?: string
 }
 
 // 試作向けの初期値。数値調整はここだけを変更すれば反映できる。
@@ -50,10 +48,8 @@ export class MiningBoard {
   readonly cells: Cell[]
   readonly startIndex: number
   readonly stairsIndex: number | null
-  readonly greatTreasureIndex: number | null
   status: GameStatus = 'playing'
   stairsFound = false
-  greatTreasureFound = false
   stamina: number
   readonly config: Readonly<GameConfig>
 
@@ -111,8 +107,8 @@ export class MiningBoard {
         return kind === 'treasure' || kind === 'mine'
       }).length
     }
-    // 通常フロアは階段、最終フロアは大宝をゴールとして1つ配置する。
-    // 可能なら0マスに置き、0マスの自動開示でゴールが偶然見つかるのを避ける。
+    // 各フロアに階段を1つ配置する。最深層を下りたときの大宝獲得は進行側で処理する。
+    // 可能なら0マスに置き、0マスの自動開示で階段が偶然見つかるのを避ける。
     const stairsCandidates = this.cells.map((cell, index) => ({ cell, index }))
       .filter(({ cell, index }) => cell.kind === 'empty' && cell.number === 0 && index !== this.startIndex)
       .map(({ index }) => index)
@@ -120,18 +116,8 @@ export class MiningBoard {
       .filter(({ cell, index }) => cell.kind === 'empty' && index !== this.startIndex)
       .map(({ index }) => index)
     const stairsChoices = stairsCandidates.length ? stairsCandidates : fallback
-    const goalIndex = stairsChoices[Math.floor(Math.random() * stairsChoices.length)]
-    if (options.isFinalFloor) {
-      this.stairsIndex = null
-      this.greatTreasureIndex = goalIndex
-      this.cells[goalIndex].kind = 'greatTreasure'
-      this.cells[goalIndex].itemId = options.largeTreasureId ?? null
-      for (const neighbor of this.neighbors(goalIndex)) this.cells[neighbor].number++
-    } else {
-      this.stairsIndex = goalIndex
-      this.greatTreasureIndex = null
-      this.cells[goalIndex].kind = 'stairs'
-    }
+    this.stairsIndex = stairsChoices[Math.floor(Math.random() * stairsChoices.length)]
+    this.cells[this.stairsIndex].kind = 'stairs'
   }
 
   canDig(index: number): boolean {
@@ -158,11 +144,6 @@ export class MiningBoard {
     const cell = this.cells[index]
     this.stamina -= this.getDigCost(index)
     cell.revealed = true
-    // 大宝の発見をスタミナ切れ判定より先に確定し、発見後の帰還につなげる。
-    if (cell.kind === 'greatTreasure') {
-      this.greatTreasureFound = true
-      return
-    }
     if (this.stamina <= 0) {
       this.status = 'lost'
     } else if (cell.kind === 'stairs') {
