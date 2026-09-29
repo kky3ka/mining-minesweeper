@@ -5,7 +5,7 @@ export const STANDARD_TILE_THEME = {
   textures: {
     unexplored: { key: 'tile-standard-unexplored', path: 'assets/tiles/standard/unexplored.png' },
     explored: { key: 'tile-standard-explored', path: 'assets/tiles/standard/explored.png' },
-    treasure: { key: 'tile-standard-treasure', path: 'assets/tiles/standard/treasure.png' },
+    treasure: { key: 'tile-standard-treasure', path: 'assets/tiles/standard/dug.png' },
     mine: { key: 'tile-standard-mine', path: 'assets/tiles/standard/mine.png' },
     ladder: { key: 'tile-standard-ladder', path: 'assets/tiles/standard/ladder.png' },
   },

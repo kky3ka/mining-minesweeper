@@ -11,6 +11,7 @@ import './style.css'
 
 const GAP = 3
 const HUD_HEIGHT = 112
+const TILE_SIZE = 48
 
 // Phaser のシーンは入力と描画を担当し、盤面ルールの判定は MiningBoard に任せる。
 class MiningScene extends Phaser.Scene {
@@ -21,7 +22,6 @@ class MiningScene extends Phaser.Scene {
   private uiCamera!: Phaser.Cameras.Scene2D.Camera
   private baseLayer!: Phaser.GameObjects.Container
   private stairsPanel!: Phaser.GameObjects.Container
-  private digConfirmPanel!: Phaser.GameObjects.Container
   private failurePanel!: Phaser.GameObjects.Container
   private inventoryPanel!: Phaser.GameObjects.Container
   private dungeonPanel!: Phaser.GameObjects.Container
@@ -32,16 +32,14 @@ class MiningScene extends Phaser.Scene {
   private runSeedText!: Phaser.GameObjects.Text
   private storedTreasureText!: Phaser.GameObjects.Text
   private greatTreasureText!: Phaser.GameObjects.Text
-  private digConfirmationText!: Phaser.GameObjects.Text
   private stairsTitleText!: Phaser.GameObjects.Text
   private stairsAdvanceButtonText!: Phaser.GameObjects.Text
   private inventoryRows!: Phaser.GameObjects.Container
   private selectedDungeonText!: Phaser.GameObjects.Text
   private selectedDungeon: DungeonDefinition = DUNGEONS[0]
   private debugSeedControls: DebugSeedControls | null = null
-  private tileSize = 64
+  private tileSize = TILE_SIZE
   private characterIndex = 0
-  private pendingDigIndex: number | null = null
 
   constructor() { super('mining') }
 
@@ -78,17 +76,16 @@ class MiningScene extends Phaser.Scene {
     this.runSeedText = this.add.text(this.scale.width / 2, 74, '', {
       fontFamily: 'sans-serif', fontSize: '12px', color: '#b9c8bd', align: 'center',
     }).setOrigin(0.5, 0).setVisible(false)
-    // 拠点・階段選択・危険マス確認は盤面の上に重ねる独立した UI レイヤー。
+    // 拠点・階段選択は盤面の上に重ねる独立した UI レイヤー。
     this.createInventoryPanel()
     this.createBaseScreen()
     this.createDungeonPanel()
     this.createStairsPanel()
-    this.createDigConfirmPanel()
     this.createFailurePanel()
     // 盤面カメラだけをプレイヤーに追従させ、HUDとポップアップは画面位置に固定する。
     this.uiCamera = this.cameras.add(0, 0, this.scale.width, this.scale.height, false, 'ui')
     this.cameras.main.ignore([
-      this.baseLayer, this.stairsPanel, this.digConfirmPanel, this.failurePanel, this.inventoryPanel, this.dungeonPanel,
+      this.baseLayer, this.stairsPanel, this.failurePanel, this.inventoryPanel, this.dungeonPanel,
       this.staminaText, this.statusText, this.costPreviewText, this.resourceCountText, this.runSeedText,
     ])
     this.uiCamera.ignore([this.boardLayer, this.characterMarker])
@@ -288,26 +285,6 @@ class MiningScene extends Phaser.Scene {
     this.stairsPanel.setVisible(false)
   }
 
-  private createDigConfirmPanel(): void {
-    // 印のある宝・地雷を掘る前に、プレイヤーが危険を確認できるようにする。
-    this.digConfirmPanel = this.add.container(this.scale.width / 2, this.scale.height / 2)
-    const background = this.add.rectangle(0, 0, 340, 260, 0x233732, 0.98).setStrokeStyle(2, 0xc49a53).setInteractive()
-    this.digConfirmPanel.add(background)
-    this.digConfirmPanel.add(this.add.text(0, -88, 'このマスを掘りますか？', {
-      fontFamily: 'sans-serif', fontSize: '21px', fontStyle: 'bold', color: '#f4ead3',
-    }).setOrigin(0.5))
-    this.digConfirmPanel.add(this.add.text(0, -48, '宝物か地雷が埋まっています', {
-      fontFamily: 'sans-serif', fontSize: '15px', color: '#c8d1c8',
-    }).setOrigin(0.5))
-    this.digConfirmationText = this.add.text(0, -15, '', {
-      fontFamily: 'sans-serif', fontSize: '16px', color: '#f6d878',
-    }).setOrigin(0.5)
-    this.digConfirmPanel.add(this.digConfirmationText)
-    this.addDigConfirmButton('掘る', 38, () => this.confirmDig())
-    this.addDigConfirmButton('やめる', 94, () => this.cancelDig())
-    this.digConfirmPanel.setVisible(false)
-  }
-
   private createFailurePanel(): void {
     // 探索失敗を盤面上に知らせ、ボタン操作で拠点へ戻れるようにする。
     this.failurePanel = this.add.container(this.scale.width / 2, this.scale.height / 2)
@@ -329,16 +306,6 @@ class MiningScene extends Phaser.Scene {
     this.inventoryPanel.setVisible(false)
   }
 
-  private addDigConfirmButton(label: string, y: number, onClick: () => void): void {
-    const button = this.add.rectangle(0, y, 230, 44, 0x53685c).setStrokeStyle(1, 0xd4c29b)
-      .setInteractive({ useHandCursor: true })
-    const text = this.add.text(0, y, label, {
-      fontFamily: 'sans-serif', fontSize: '16px', color: '#fff8e9',
-    }).setOrigin(0.5)
-    button.on('pointerdown', onClick)
-    this.digConfirmPanel.add([button, text])
-  }
-
   private addChoiceButton(label: string, y: number, onClick: () => void): Phaser.GameObjects.Text {
     const button = this.add.rectangle(0, y, 250, 46, 0x53685c).setStrokeStyle(1, 0xd4c29b)
       .setInteractive({ useHandCursor: true })
@@ -355,7 +322,6 @@ class MiningScene extends Phaser.Scene {
     const scale = Math.min(1, (this.scale.width - 24) / 340)
     this.baseLayer.setPosition(this.scale.width / 2, this.scale.height / 2).setScale(scale)
     this.stairsPanel.setPosition(this.scale.width / 2, this.scale.height / 2).setScale(scale)
-    this.digConfirmPanel.setPosition(this.scale.width / 2, this.scale.height / 2).setScale(scale)
     this.failurePanel.setPosition(this.scale.width / 2, this.scale.height / 2).setScale(scale)
     const inventoryScale = Math.min(1, (this.scale.width - 24) / 340, (this.scale.height - 24) / 480)
     this.inventoryPanel.setPosition(this.scale.width / 2, this.scale.height / 2).setScale(inventoryScale)
@@ -372,7 +338,6 @@ class MiningScene extends Phaser.Scene {
     this.baseLayer.setVisible(false)
     this.dungeonPanel.setVisible(false)
     this.stairsPanel.setVisible(false)
-    this.digConfirmPanel.setVisible(false)
     this.failurePanel.setVisible(false)
     this.boardLayer.setVisible(true)
     this.characterMarker.setVisible(true)
@@ -419,7 +384,6 @@ class MiningScene extends Phaser.Scene {
   private showBaseScreen(): void {
     this.updateStoredTreasureText()
     this.stairsPanel.setVisible(false)
-    this.digConfirmPanel.setVisible(false)
     this.failurePanel.setVisible(false)
     this.inventoryPanel.setVisible(false)
     this.dungeonPanel.setVisible(false)
@@ -438,7 +402,7 @@ class MiningScene extends Phaser.Scene {
   private layoutBoard(): void {
     // 画面幅からマスの大きさを決めるため、盤面サイズ変更にも追従する。
     // タイル画像の基準寸法を保ち、画面外は既存のカメラ追従で表示する。
-    this.tileSize = 64
+    this.tileSize = TILE_SIZE
     const boardWidth = this.board.config.width * (this.tileSize + GAP) - GAP
     const boardHeight = this.board.config.height * (this.tileSize + GAP) - GAP
     this.boardLayer.setPosition(0, 0)
@@ -485,7 +449,8 @@ class MiningScene extends Phaser.Scene {
       if (cell.revealed) {
         if (cell.kind === 'empty' && cell.number > 0) label = String(cell.number)
       // 宝・地雷の「?」印は、現在掘れる隣接マスに限って表示する。
-      } else if (this.board.canAttemptDig(index) && (cell.kind === 'treasure' || cell.kind === 'mine')) {
+      } else if (DEBUG_OPTIONS.showBuriedCellHints && this.board.canAttemptDig(index) &&
+        (cell.kind === 'treasure' || cell.kind === 'mine')) {
         label = '?'
       }
       if (label) {
@@ -515,13 +480,6 @@ class MiningScene extends Phaser.Scene {
           if (!cell.revealed) {
             if (!this.board.canDig(index)) {
               this.statusText.setText(`スタミナ不足（必要 ${this.board.getDigCost(index)}）`).setColor('#ff8a76')
-              return
-            }
-            if (cell.kind === 'treasure' || cell.kind === 'mine') {
-              this.pendingDigIndex = index
-              this.digConfirmationText.setText(`必要スタミナ: ${this.board.getDigCost(index)}`)
-              this.digConfirmPanel.setVisible(true)
-              this.layoutOverlays()
               return
             }
             this.performDig(index)
@@ -564,23 +522,6 @@ class MiningScene extends Phaser.Scene {
         ease: 'Bounce.Out',
       }),
     })
-  }
-
-  private confirmDig(): void {
-    const index = this.pendingDigIndex
-    this.pendingDigIndex = null
-    this.digConfirmPanel.setVisible(false)
-    if (index === null) return
-    if (!this.board.canDig(index)) {
-      this.statusText.setText(`スタミナ不足（必要 ${this.board.getDigCost(index)}）`).setColor('#ff8a76')
-      return
-    }
-    this.performDig(index)
-  }
-
-  private cancelDig(): void {
-    this.pendingDigIndex = null
-    this.digConfirmPanel.setVisible(false)
   }
 
   private performDig(index: number): void {
