@@ -9,6 +9,8 @@ export interface Cell {
   kind: TileKind
   number: number
   revealed: boolean
+  // プレイヤーが危険そうな場所を記録する印。宝・地雷の正解判定には使わない。
+  flagged: boolean
   // 宝や大宝のマスターを参照するID。表示名などはアイテムデータ側に置く。
   itemId: string | null
 }
@@ -39,7 +41,7 @@ export const DEFAULT_CONFIG: Readonly<GameConfig> = {
   mineCount: 6,
   maxStamina: 150,
   digCost: 1,
-  treasureDigCost: 5,
+  treasureDigCost: 0,
   mineDamage: 5,
 }
 
@@ -77,12 +79,14 @@ export class MiningBoard {
     this.stamina = Math.min(config.maxStamina, Math.max(0, initialStamina))
     const { width, height } = config
     if (width < 3 || height < 3 || config.treasureCount < 0 || config.mineCount < 0 ||
-      config.maxStamina <= 0 || config.digCost <= 0 || config.treasureDigCost <= 0 || config.mineDamage < 0 ||
+      config.maxStamina <= 0 || config.digCost <= 0 || config.treasureDigCost < 0 || config.mineDamage < 0 ||
       config.treasureCount + config.mineCount > width * height - 2) {
       throw new Error('Invalid board configuration')
     }
     // 盤面は一次元配列で持ち、座標との変換には width を使う。縦横サイズを変えても扱いやすい。
-    this.cells = Array.from({ length: width * height }, () => ({ kind: 'empty', number: 0, revealed: false, itemId: null }))
+    this.cells = Array.from({ length: width * height }, () => ({
+      kind: 'empty', number: 0, revealed: false, flagged: false, itemId: null,
+    }))
     const startCandidates = this.cells.map((_, index) => index).filter(index =>
       this.cells.length - this.neighbors(index).length - 1 >= config.mineCount + config.treasureCount,
     )
@@ -145,11 +149,20 @@ export class MiningBoard {
     return this.config.digCost
   }
 
+  toggleFlag(index: number): boolean {
+    // 旗は未探索マスにだけ付け外しでき、採掘内容や生成結果には影響しない。
+    if (this.status !== 'playing' || !Number.isInteger(index) || index < 0 || index >= this.cells.length ||
+      this.cells[index].revealed) return false
+    this.cells[index].flagged = !this.cells[index].flagged
+    return true
+  }
+
   dig(index: number): void {
     if (!this.canDig(index)) return
     const cell = this.cells[index]
     this.stamina -= this.getDigCost(index)
     cell.revealed = true
+    cell.flagged = false
     if (this.stamina <= 0) {
       this.status = 'lost'
     } else if (cell.kind === 'stairs') {
@@ -165,6 +178,7 @@ export class MiningBoard {
       const cell = this.cells[neighbor]
       if (cell.revealed || cell.kind === 'mine') continue
       cell.revealed = true
+      cell.flagged = false
       if (cell.kind === 'stairs') this.stairsFound = true
     }
   }

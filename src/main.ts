@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { DUNGEONS, createStageConfig, getDungeonStage, type DungeonDefinition } from './DungeonData'
 import { DEBUG_OPTIONS } from './DebugOptions'
 import { DebugSeedControls } from './DebugSeedControls'
+import { readDetector } from './Detector'
 import { ExpeditionState } from './ExpeditionState'
 import { ITEMS, getItemName } from './ItemData'
 import { DEFAULT_CONFIG, MiningBoard } from './MiningBoard'
@@ -10,7 +11,7 @@ import { getStandardTileTexture, STANDARD_TILE_THEME } from './TileTheme'
 import './style.css'
 
 const GAP = 3
-const HUD_HEIGHT = 112
+const HUD_HEIGHT = 198
 const TILE_SIZE = 48
 
 // Phaser のシーンは入力と描画を担当し、盤面ルールの判定は MiningBoard に任せる。
@@ -28,6 +29,10 @@ class MiningScene extends Phaser.Scene {
   private staminaText!: Phaser.GameObjects.Text
   private statusText!: Phaser.GameObjects.Text
   private costPreviewText!: Phaser.GameObjects.Text
+  private detectorText!: Phaser.GameObjects.Text
+  private modeControl!: Phaser.GameObjects.Container
+  private digModeButton!: Phaser.GameObjects.Rectangle
+  private flagModeButton!: Phaser.GameObjects.Rectangle
   private resourceCountText!: Phaser.GameObjects.Text
   private runSeedText!: Phaser.GameObjects.Text
   private storedTreasureText!: Phaser.GameObjects.Text
@@ -40,6 +45,7 @@ class MiningScene extends Phaser.Scene {
   private debugSeedControls: DebugSeedControls | null = null
   private tileSize = TILE_SIZE
   private characterIndex = 0
+  private inputMode: 'dig' | 'flag' = 'dig'
 
   constructor() { super('mining') }
 
@@ -70,12 +76,18 @@ class MiningScene extends Phaser.Scene {
     this.costPreviewText = this.add.text(this.scale.width / 2, 54, '', {
       fontFamily: 'sans-serif', fontSize: '13px', color: '#b9c8bd', align: 'center',
     }).setOrigin(0.5, 0)
-    this.resourceCountText = this.add.text(this.scale.width / 2, 92, '', {
+    // 探知機は探索中だけ表示し、プレイヤーの移動に合わせて常時反応を更新する。
+    this.detectorText = this.add.text(this.scale.width / 2, 74, '', {
+      fontFamily: 'sans-serif', fontSize: '12px', color: '#c9d8c9', align: 'center',
+      lineSpacing: 2,
+    }).setOrigin(0.5, 0).setVisible(false)
+    this.resourceCountText = this.add.text(this.scale.width / 2, 114, '', {
       fontFamily: 'sans-serif', fontSize: '13px', color: '#ffcf8a', align: 'center',
     }).setOrigin(0.5, 0).setVisible(false)
-    this.runSeedText = this.add.text(this.scale.width / 2, 74, '', {
+    this.runSeedText = this.add.text(this.scale.width / 2, 132, '', {
       fontFamily: 'sans-serif', fontSize: '12px', color: '#b9c8bd', align: 'center',
     }).setOrigin(0.5, 0).setVisible(false)
+    this.createModeControls()
     // 拠点・階段選択は盤面の上に重ねる独立した UI レイヤー。
     this.createInventoryPanel()
     this.createBaseScreen()
@@ -86,7 +98,8 @@ class MiningScene extends Phaser.Scene {
     this.uiCamera = this.cameras.add(0, 0, this.scale.width, this.scale.height, false, 'ui')
     this.cameras.main.ignore([
       this.baseLayer, this.stairsPanel, this.failurePanel, this.inventoryPanel, this.dungeonPanel,
-      this.staminaText, this.statusText, this.costPreviewText, this.resourceCountText, this.runSeedText,
+      this.staminaText, this.statusText, this.costPreviewText, this.detectorText, this.resourceCountText, this.runSeedText,
+      this.modeControl,
     ])
     this.uiCamera.ignore([this.boardLayer, this.characterMarker])
     this.boardLayer.setVisible(false)
@@ -94,6 +107,7 @@ class MiningScene extends Phaser.Scene {
     this.staminaText.setVisible(false)
     this.statusText.setVisible(false)
     this.costPreviewText.setVisible(false)
+    this.detectorText.setVisible(false)
     this.resourceCountText.setVisible(false)
     this.layoutOverlays()
     this.layoutCameras()
@@ -102,8 +116,10 @@ class MiningScene extends Phaser.Scene {
       this.staminaText.setPosition(this.scale.width / 2, 9)
       this.statusText.setPosition(this.scale.width / 2, 32)
       this.costPreviewText.setPosition(this.scale.width / 2, 54)
-      this.resourceCountText.setPosition(this.scale.width / 2, 92)
-      this.runSeedText.setPosition(this.scale.width / 2, 74)
+      this.detectorText.setPosition(this.scale.width / 2, 74)
+      this.resourceCountText.setPosition(this.scale.width / 2, 114)
+      this.runSeedText.setPosition(this.scale.width / 2, 132)
+      this.modeControl.setPosition(this.scale.width / 2, 166)
       this.layoutCameras()
       this.layoutOverlays()
       if (this.board) {
@@ -116,6 +132,34 @@ class MiningScene extends Phaser.Scene {
       const gameRoot = document.getElementById('game')
       if (gameRoot) this.debugSeedControls = new DebugSeedControls(gameRoot, seed => this.beginExpedition(seed))
     }
+  }
+
+  private createModeControls(): void {
+    // PC・スマートフォン共通の大きなボタンで操作モードを切り替える。
+    this.modeControl = this.add.container(this.scale.width / 2, 166).setDepth(20).setVisible(false)
+    this.digModeButton = this.add.rectangle(-64, 0, 120, 36, 0xb87a38)
+      .setStrokeStyle(2, 0xf0c16e).setInteractive({ useHandCursor: true })
+    const digLabel = this.add.text(-64, 0, '採掘', {
+      fontFamily: 'sans-serif', fontSize: '15px', fontStyle: 'bold', color: '#fff8e9',
+    }).setOrigin(0.5)
+    this.flagModeButton = this.add.rectangle(64, 0, 120, 36, 0x394b43)
+      .setStrokeStyle(2, 0x77867b).setInteractive({ useHandCursor: true })
+    const flagLabel = this.add.text(64, 0, 'フラグ', {
+      fontFamily: 'sans-serif', fontSize: '15px', fontStyle: 'bold', color: '#fff8e9',
+    }).setOrigin(0.5)
+    this.modeControl.add([this.digModeButton, digLabel, this.flagModeButton, flagLabel])
+    this.digModeButton.on('pointerdown', () => this.setInputMode('dig'))
+    this.flagModeButton.on('pointerdown', () => this.setInputMode('flag'))
+  }
+
+  private setInputMode(mode: 'dig' | 'flag'): void {
+    this.inputMode = mode
+    this.digModeButton.setFillStyle(mode === 'dig' ? 0xb87a38 : 0x394b43)
+      .setStrokeStyle(2, mode === 'dig' ? 0xf0c16e : 0x77867b)
+    this.flagModeButton.setFillStyle(mode === 'flag' ? 0xb87a38 : 0x394b43)
+      .setStrokeStyle(2, mode === 'flag' ? 0xf0c16e : 0x77867b)
+    this.drawBoard()
+    this.updateStatus()
   }
 
   private createBaseScreen(): void {
@@ -334,6 +378,7 @@ class MiningScene extends Phaser.Scene {
     this.expedition.beginExpedition(seed)
     this.board = this.createBoardForFloor(DEFAULT_CONFIG.maxStamina, seed)
     this.characterIndex = this.board.startIndex
+    this.setInputMode('dig')
     this.tweens.killTweensOf(this.characterMarker)
     this.baseLayer.setVisible(false)
     this.dungeonPanel.setVisible(false)
@@ -344,6 +389,8 @@ class MiningScene extends Phaser.Scene {
     this.staminaText.setVisible(true)
     this.statusText.setVisible(true)
     this.costPreviewText.setVisible(true)
+    this.detectorText.setVisible(true)
+    this.modeControl.setVisible(true)
     this.resourceCountText.setVisible(DEBUG_OPTIONS.showResourceCounts)
     this.runSeedText.setText(`Seed: ${seed}`).setVisible(import.meta.env.DEV)
     this.debugSeedControls?.setVisible(false)
@@ -392,6 +439,8 @@ class MiningScene extends Phaser.Scene {
     this.staminaText.setVisible(false)
     this.statusText.setVisible(false)
     this.costPreviewText.setVisible(false)
+    this.detectorText.setVisible(false)
+    this.modeControl.setVisible(false)
     this.resourceCountText.setVisible(false)
     this.runSeedText.setVisible(false)
     this.baseLayer.setVisible(true)
@@ -435,8 +484,10 @@ class MiningScene extends Phaser.Scene {
       const x = (index % this.board.config.width) * (this.tileSize + GAP)
       const y = Math.floor(index / this.board.config.width) * (this.tileSize + GAP)
       // 開始マスも他の開示マスと同じ色にし、特別な色で位置を示さない。
-      const canClick = this.board.status === 'playing' && (cell.revealed || this.board.canAttemptDig(index))
-      const shouldHighlight = canClick && !cell.revealed
+      const canClick = this.board.status === 'playing' && (this.inputMode === 'flag'
+        ? !cell.revealed
+        : cell.revealed || this.board.canAttemptDig(index))
+      const shouldHighlight = this.inputMode === 'dig' && canClick && !cell.revealed
       const tile = this.add.image(x, y, getStandardTileTexture(cell)).setOrigin(0)
         .setDisplaySize(this.tileSize, this.tileSize)
       this.boardLayer.add(tile)
@@ -444,6 +495,17 @@ class MiningScene extends Phaser.Scene {
         const highlight = this.add.rectangle(x, y, this.tileSize, this.tileSize, 0xffffff, 0)
           .setOrigin(0).setStrokeStyle(3, 0xffd66e)
         this.boardLayer.add(highlight)
+      }
+      if (!cell.revealed && cell.flagged) {
+        // 画像を追加せず、旗竿と三角形でフラグ位置を示す。
+        const pole = this.add.rectangle(x + this.tileSize * 0.39, y + this.tileSize * 0.57,
+          Math.max(2, this.tileSize * 0.045), this.tileSize * 0.42, 0x46372a)
+        const flag = this.add.triangle(x + this.tileSize * 0.53, y + this.tileSize * 0.39,
+          -this.tileSize * 0.12, -this.tileSize * 0.13,
+          -this.tileSize * 0.12, this.tileSize * 0.13,
+          this.tileSize * 0.14, 0,
+          0xe85f4a)
+        this.boardLayer.add([pole, flag])
       }
       let label = ''
       if (cell.revealed) {
@@ -462,22 +524,28 @@ class MiningScene extends Phaser.Scene {
       }
       if (canClick) {
         const hit = this.add.rectangle(x, y, this.tileSize, this.tileSize, 0xffffff, 0.001).setOrigin(0).setInteractive()
-        if (!cell.revealed) {
-          hit.on('pointerover', () => {
-            this.costPreviewText.setText(`このマスの採掘消費: ${this.board.getDigCost(index)}`)
-          })
-          hit.on('pointerout', () => this.showDefaultCostHint())
-        } else if (cell.kind === 'stairs' && this.board.stairsFound) {
+        if (cell.revealed && cell.kind === 'stairs' && this.board.stairsFound) {
           hit.on('pointerover', () => this.costPreviewText.setText('クリックしてフロアの選択肢を開く'))
           hit.on('pointerout', () => this.showDefaultCostHint())
         }
         hit.on('pointerdown', () => {
+          if (this.inputMode === 'flag') {
+            if (!cell.revealed && this.board.toggleFlag(index)) {
+              this.drawBoard()
+              this.updateStatus()
+            }
+            return
+          }
           // 開示済み階段は移動先ではなく、階段の選択肢を開く操作にする。
           if (cell.revealed && cell.kind === 'stairs' && this.board.stairsFound) {
             this.showStairsChoices()
             return
           }
           if (!cell.revealed) {
+            if (cell.flagged) {
+              this.statusText.setText('フラグを外すと採掘できます').setColor('#f6d878')
+              return
+            }
             if (!this.board.canDig(index)) {
               this.statusText.setText(`スタミナ不足（必要 ${this.board.getDigCost(index)}）`).setColor('#ff8a76')
               return
@@ -487,6 +555,7 @@ class MiningScene extends Phaser.Scene {
           }
           this.characterIndex = index
           this.moveMarkerTo(index)
+          this.updateDetectorDisplay()
         })
         this.boardLayer.add(hit)
       }
@@ -549,8 +618,24 @@ class MiningScene extends Phaser.Scene {
       `配置数（デバッグ） 地雷 ${this.board.placedMineCount} / 宝物 ${this.board.placedTreasureCount}`,
     )
     if (this.board.status === 'lost') this.statusText.setText('スタミナ切れで探索失敗').setColor('#ff8a76')
+    else if (this.inputMode === 'flag') this.statusText.setText('フラグモード：未探索マスをタップ').setColor('#f6d878')
     else if (this.board.stairsFound) this.statusText.setText('階段発見！「⌄」をクリックして選択').setColor('#f6d878')
     else this.statusText.setText('隣のマスを掘って道を探そう').setColor('#f4ead3')
+    this.updateDetectorDisplay()
+  }
+
+  private updateDetectorDisplay(): void {
+    const metalReading = readDetector(this.board.cells, this.board.config.width, this.characterIndex, 'treasure')
+    const mineReading = readDetector(this.board.cells, this.board.config.width, this.characterIndex, 'mine')
+    this.detectorText.setText([
+      `金属探知機　${this.formatDetectorStrength(metalReading.strength)}`,
+      `地雷探知機　${this.formatDetectorStrength(mineReading.strength)}`,
+    ])
+  }
+
+  private formatDetectorStrength(strength: number): string {
+    // 3段階のメーターで強さだけを示し、対象の位置は表示しない。
+    return '●'.repeat(strength) + '○'.repeat(3 - strength)
   }
 
   private advanceFloor(): void {
@@ -590,8 +675,9 @@ class MiningScene extends Phaser.Scene {
 
   private showDefaultCostHint(): void {
     const baseCost = this.board.config.digCost
-    const specialCost = baseCost + Math.max(this.board.config.treasureDigCost, this.board.config.mineDamage)
-    this.costPreviewText.setText(`採掘消費: 通常 ${baseCost} / 宝物・地雷 ${specialCost}`)
+    const treasureCost = baseCost + this.board.config.treasureDigCost
+    const mineCost = baseCost + this.board.config.mineDamage
+    this.costPreviewText.setText(`採掘消費: 通常 ${baseCost} / 宝物 ${treasureCost} / 地雷 ${mineCost}`)
   }
 }
 
