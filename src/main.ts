@@ -1,14 +1,16 @@
 import Phaser from 'phaser'
 import { DUNGEONS, createStageConfig, getDungeonStage, type DungeonDefinition } from './DungeonData'
 import { DEBUG_OPTIONS } from './DebugOptions'
+import { DebugSeedControls } from './DebugSeedControls'
 import { ExpeditionState } from './ExpeditionState'
 import { ITEMS, getItemName } from './ItemData'
 import { DEFAULT_CONFIG, MiningBoard } from './MiningBoard'
+import { createRandomSeed, deriveStageSeed } from './SeededRandom'
 import { getStandardTileTexture, STANDARD_TILE_THEME } from './TileTheme'
 import './style.css'
 
 const GAP = 3
-const HUD_HEIGHT = 96
+const HUD_HEIGHT = 112
 
 // Phaser のシーンは入力と描画を担当し、盤面ルールの判定は MiningBoard に任せる。
 class MiningScene extends Phaser.Scene {
@@ -27,6 +29,7 @@ class MiningScene extends Phaser.Scene {
   private statusText!: Phaser.GameObjects.Text
   private costPreviewText!: Phaser.GameObjects.Text
   private resourceCountText!: Phaser.GameObjects.Text
+  private runSeedText!: Phaser.GameObjects.Text
   private storedTreasureText!: Phaser.GameObjects.Text
   private greatTreasureText!: Phaser.GameObjects.Text
   private digConfirmationText!: Phaser.GameObjects.Text
@@ -35,6 +38,7 @@ class MiningScene extends Phaser.Scene {
   private inventoryRows!: Phaser.GameObjects.Container
   private selectedDungeonText!: Phaser.GameObjects.Text
   private selectedDungeon: DungeonDefinition = DUNGEONS[0]
+  private debugSeedControls: DebugSeedControls | null = null
   private tileSize = 64
   private characterIndex = 0
   private pendingDigIndex: number | null = null
@@ -52,8 +56,6 @@ class MiningScene extends Phaser.Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor('#172322')
-    this.board = this.createBoardForFloor(DEFAULT_CONFIG.maxStamina)
-    this.characterIndex = this.board.startIndex
     this.boardLayer = this.add.container(0, 80)
     this.characterMarker = this.add.container(0, 0)
     const markerRadius = Math.max(5, this.tileSize * 0.17)
@@ -70,8 +72,11 @@ class MiningScene extends Phaser.Scene {
     this.costPreviewText = this.add.text(this.scale.width / 2, 54, '', {
       fontFamily: 'sans-serif', fontSize: '13px', color: '#b9c8bd', align: 'center',
     }).setOrigin(0.5, 0)
-    this.resourceCountText = this.add.text(this.scale.width / 2, 74, '', {
+    this.resourceCountText = this.add.text(this.scale.width / 2, 92, '', {
       fontFamily: 'sans-serif', fontSize: '13px', color: '#ffcf8a', align: 'center',
+    }).setOrigin(0.5, 0).setVisible(false)
+    this.runSeedText = this.add.text(this.scale.width / 2, 74, '', {
+      fontFamily: 'sans-serif', fontSize: '12px', color: '#b9c8bd', align: 'center',
     }).setOrigin(0.5, 0).setVisible(false)
     // 拠点・階段選択・危険マス確認は盤面の上に重ねる独立した UI レイヤー。
     this.createInventoryPanel()
@@ -84,7 +89,7 @@ class MiningScene extends Phaser.Scene {
     this.uiCamera = this.cameras.add(0, 0, this.scale.width, this.scale.height, false, 'ui')
     this.cameras.main.ignore([
       this.baseLayer, this.stairsPanel, this.digConfirmPanel, this.failurePanel, this.inventoryPanel, this.dungeonPanel,
-      this.staminaText, this.statusText, this.costPreviewText, this.resourceCountText,
+      this.staminaText, this.statusText, this.costPreviewText, this.resourceCountText, this.runSeedText,
     ])
     this.uiCamera.ignore([this.boardLayer, this.characterMarker])
     this.boardLayer.setVisible(false)
@@ -95,25 +100,32 @@ class MiningScene extends Phaser.Scene {
     this.resourceCountText.setVisible(false)
     this.layoutOverlays()
     this.layoutCameras()
-    this.layoutBoard()
     this.scale.on('resize', () => {
       // Phaser の表示サイズ変更に合わせて HUD、モーダル、盤面を再配置する。
       this.staminaText.setPosition(this.scale.width / 2, 9)
       this.statusText.setPosition(this.scale.width / 2, 32)
       this.costPreviewText.setPosition(this.scale.width / 2, 54)
-      this.resourceCountText.setPosition(this.scale.width / 2, 74)
+      this.resourceCountText.setPosition(this.scale.width / 2, 92)
+      this.runSeedText.setPosition(this.scale.width / 2, 74)
       this.layoutCameras()
       this.layoutOverlays()
-      this.layoutBoard()
-      this.placeMarker(this.characterIndex)
-      if (this.boardLayer.visible) this.drawBoard()
+      if (this.board) {
+        this.layoutBoard()
+        this.placeMarker(this.characterIndex)
+        if (this.boardLayer.visible) this.drawBoard()
+      }
     })
+    if (import.meta.env.DEV) {
+      const gameRoot = document.getElementById('game')
+      if (gameRoot) this.debugSeedControls = new DebugSeedControls(gameRoot, seed => this.beginExpedition(seed))
+    }
   }
 
   private createBaseScreen(): void {
     // 拠点は探索画面と切り替えて表示し、保管済みの宝と出発操作をまとめる。
     this.baseLayer = this.add.container(this.scale.width / 2, this.scale.height / 2)
-    this.baseLayer.add(this.add.rectangle(0, 0, 340, 400, 0x233732, 0.98).setStrokeStyle(2, 0xc49a53))
+    const panelHeight = import.meta.env.DEV ? 470 : 400
+    this.baseLayer.add(this.add.rectangle(0, 0, 340, panelHeight, 0x233732, 0.98).setStrokeStyle(2, 0xc49a53))
     this.baseLayer.add(this.add.text(0, -164, '採掘者の拠点', {
       fontFamily: 'sans-serif', fontSize: '28px', fontStyle: 'bold', color: '#f4ead3',
     }).setOrigin(0.5))
@@ -351,10 +363,10 @@ class MiningScene extends Phaser.Scene {
     this.dungeonPanel.setPosition(this.scale.width / 2, this.scale.height / 2).setScale(dungeonScale)
   }
 
-  private beginExpedition(): void {
+  private beginExpedition(seed = createRandomSeed()): void {
     // 出発ごとに新しい盤面を生成し、キャラクターをランダムな開始位置へ置く。
-    this.expedition.beginExpedition()
-    this.board = this.createBoardForFloor(DEFAULT_CONFIG.maxStamina)
+    this.expedition.beginExpedition(seed)
+    this.board = this.createBoardForFloor(DEFAULT_CONFIG.maxStamina, seed)
     this.characterIndex = this.board.startIndex
     this.tweens.killTweensOf(this.characterMarker)
     this.baseLayer.setVisible(false)
@@ -368,6 +380,8 @@ class MiningScene extends Phaser.Scene {
     this.statusText.setVisible(true)
     this.costPreviewText.setVisible(true)
     this.resourceCountText.setVisible(DEBUG_OPTIONS.showResourceCounts)
+    this.runSeedText.setText(`Seed: ${seed}`).setVisible(import.meta.env.DEV)
+    this.debugSeedControls?.setVisible(false)
     this.layoutBoard()
     this.placeMarker(this.characterIndex)
     this.followCharacter()
@@ -415,7 +429,9 @@ class MiningScene extends Phaser.Scene {
     this.statusText.setVisible(false)
     this.costPreviewText.setVisible(false)
     this.resourceCountText.setVisible(false)
+    this.runSeedText.setVisible(false)
     this.baseLayer.setVisible(true)
+    this.debugSeedControls?.setVisible(true)
     this.layoutOverlays()
   }
 
@@ -608,7 +624,9 @@ class MiningScene extends Phaser.Scene {
     const remainingStamina = this.board.stamina
     if (!this.expedition.descend(this.selectedDungeon.stages.length)) return
     this.stairsPanel.setVisible(false)
-    this.board = this.createBoardForFloor(remainingStamina)
+    const runSeed = this.expedition.runSeed
+    if (runSeed === null) return
+    this.board = this.createBoardForFloor(remainingStamina, runSeed)
     this.characterIndex = this.board.startIndex
     this.tweens.killTweensOf(this.characterMarker)
     this.layoutBoard()
@@ -618,11 +636,13 @@ class MiningScene extends Phaser.Scene {
     this.updateStatus()
   }
 
-  private createBoardForFloor(initialStamina: number): MiningBoard {
+  private createBoardForFloor(initialStamina: number, runSeed: number): MiningBoard {
     const stage = getDungeonStage(this.selectedDungeon, this.expedition.floor)
     const config = createStageConfig(stage, DEFAULT_CONFIG)
+    const stageSeed = deriveStageSeed(this.selectedDungeon.id, runSeed, stage.sequence)
 
     return new MiningBoard(config, initialStamina, {
+      seed: stageSeed,
       treasureItems: stage.items,
     })
   }

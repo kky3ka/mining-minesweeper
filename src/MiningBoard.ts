@@ -1,4 +1,5 @@
 import type { ItemProbability } from './DungeonData'
+import { SeededRandom } from './SeededRandom.ts'
 
 // マスの中身を表す。画面表示はこの値を見て決め、盤面ルール自体は Phaser に依存させない。
 export type TileKind = 'empty' | 'treasure' | 'mine' | 'stairs'
@@ -26,6 +27,7 @@ export interface GameConfig {
 }
 
 export interface BoardGenerationOptions {
+  seed: number
   treasureItems?: readonly ItemProbability[]
 }
 
@@ -48,10 +50,12 @@ export class MiningBoard {
   readonly cells: Cell[]
   readonly startIndex: number
   readonly stairsIndex: number | null
+  readonly generationSeed: number
   status: GameStatus = 'playing'
   stairsFound = false
   stamina: number
   readonly config: Readonly<GameConfig>
+  private readonly random: SeededRandom
 
   // マスの種類から数えるため、設定値ではなく実際に生成された個数を返す。
   get placedMineCount(): number {
@@ -65,9 +69,11 @@ export class MiningBoard {
   constructor(
     config: Readonly<GameConfig> = DEFAULT_CONFIG,
     initialStamina = config.maxStamina,
-    options: BoardGenerationOptions = {},
+    options: BoardGenerationOptions,
   ) {
     this.config = config
+    this.generationSeed = options.seed
+    this.random = new SeededRandom(options.seed)
     this.stamina = Math.min(config.maxStamina, Math.max(0, initialStamina))
     const { width, height } = config
     if (width < 3 || height < 3 || config.treasureCount < 0 || config.mineCount < 0 ||
@@ -84,7 +90,7 @@ export class MiningBoard {
       throw new Error('Too many resources to guarantee a safe starting point')
     }
     // 開始位置とその周囲8マスには宝・地雷を置かず、最初の数字が必ず0になるようにする。
-    this.startIndex = startCandidates[Math.floor(Math.random() * startCandidates.length)]
+    this.startIndex = startCandidates[Math.floor(this.random.next() * startCandidates.length)]
     const adjacentToStart = new Set(this.neighbors(this.startIndex))
     const mineCandidates = this.cells.map((_, index) => index)
       .filter(index => index !== this.startIndex && !adjacentToStart.has(index))
@@ -116,7 +122,7 @@ export class MiningBoard {
       .filter(({ cell, index }) => cell.kind === 'empty' && index !== this.startIndex)
       .map(({ index }) => index)
     const stairsChoices = stairsCandidates.length ? stairsCandidates : fallback
-    this.stairsIndex = stairsChoices[Math.floor(Math.random() * stairsChoices.length)]
+    this.stairsIndex = stairsChoices[Math.floor(this.random.next() * stairsChoices.length)]
     this.cells[this.stairsIndex].kind = 'stairs'
   }
 
@@ -179,7 +185,7 @@ export class MiningBoard {
   private shuffle(items: number[]): void {
     // 配列をその場でランダム化し、配置候補の偏りを抑える。
     for (let i = items.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
+      const j = Math.floor(this.random.next() * (i + 1))
       ;[items[i], items[j]] = [items[j], items[i]]
     }
   }
@@ -188,7 +194,7 @@ export class MiningBoard {
     const totalProbability = items.reduce((total, item) => total + Math.max(0, item.probability), 0)
     if (totalProbability <= 0) return null
 
-    let roll = Math.random() * totalProbability
+    let roll = this.random.next() * totalProbability
     for (const item of items) {
       roll -= Math.max(0, item.probability)
       if (roll < 0) return item.itemId

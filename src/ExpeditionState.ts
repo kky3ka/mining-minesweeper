@@ -6,14 +6,16 @@ export { MAX_DUNGEON_FLOORS }
 /** 探索中の仮取得分と拠点に保管した分を分けて管理する。 */
 export class ExpeditionState {
   floor = 1
+  runSeed: number | null = null
   carriedItems: Record<string, number> = {}
   storedItems: Record<string, number> = {}
   greatTreasureObtained = false
   obtainedGreatTreasureIds: string[] = []
 
-  beginExpedition(): void {
-    // 新しい出発では探索階と持ち帰り前の宝だけを初期化する。
+  beginExpedition(seed: number): void {
+    // Run単位でSeedを保持し、階層移動中も同じ値を基準として使う。
     this.floor = 1
+    this.runSeed = seed
     this.carriedItems = {}
   }
 
@@ -52,11 +54,13 @@ export class ExpeditionState {
     }
     this.carriedItems = {}
     this.floor = 1
+    this.runSeed = null
   }
 
   failExpedition(): void {
     // 探索失敗では今回持ち帰る予定だった宝を失い、保管済みの宝は維持する。
     this.carriedItems = {}
     this.floor = 1
+    this.runSeed = null
   }
 }
