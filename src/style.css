@@ -4,11 +4,11 @@ body { margin: 0; min-width: 320px; min-height: 100vh; }
 #app { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
 #game { position: relative; width: min(100%, 620px); height: min(calc(100svh - 32px), 680px); overflow: hidden; }
 #game canvas { display: block; width: 100% !important; height: 100% !important; touch-action: manipulation; }
-.debug-seed-controls { position: absolute; z-index: 5; top: calc(50% + 169px); left: 50%; width: min(300px, calc(100% - 32px)); transform: translateX(-50%); margin: 0; padding: 8px 10px; border: 1px solid #c49a53; border-radius: 6px; background: #233732; color: #f4ead3; font-size: 12px; }
+.debug-seed-controls { position: static; z-index: 5; width: min(300px, calc(100vw - 32px)); margin: 8px auto; padding: 8px 10px; border: 1px solid #c49a53; border-radius: 6px; background: #233732; color: #f4ead3; font-size: 12px; }
 .debug-seed-controls[hidden] { display: none; }
 .debug-seed-controls label { display: block; margin-bottom: 4px; }
 .debug-seed-controls__row { display: flex; gap: 6px; }
 .debug-seed-controls input { min-width: 0; flex: 1; padding: 5px 7px; border: 1px solid #a99b79; border-radius: 4px; background: #f4ead3; color: #172322; font: inherit; }
 .debug-seed-controls button { padding: 5px 8px; border: 1px solid #f0c16e; border-radius: 4px; background: #b87a38; color: #fff8e9; font: inherit; cursor: pointer; }
 .debug-seed-controls__error { display: block; min-height: 0; margin-top: 3px; color: #ff8a76; }
-@media (max-width: 363px) { .debug-seed-controls { top: calc(50% + 124px); width: calc(100% - 24px); padding: 6px 8px; } }
+@media (max-width: 363px) { .debug-seed-controls { width: calc(100vw - 24px); padding: 6px 8px; } }

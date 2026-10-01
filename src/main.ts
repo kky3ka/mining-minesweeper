@@ -20,11 +20,13 @@ class MiningScene extends Phaser.Scene {
   private board!: MiningBoard
   private boardLayer!: Phaser.GameObjects.Container
   private characterMarker!: Phaser.GameObjects.Container
+  private itemPickupPopup: Phaser.GameObjects.Container | null = null
   private uiCamera!: Phaser.Cameras.Scene2D.Camera
   private baseLayer!: Phaser.GameObjects.Container
   private stairsPanel!: Phaser.GameObjects.Container
   private failurePanel!: Phaser.GameObjects.Container
   private inventoryPanel!: Phaser.GameObjects.Container
+  private resultPanel!: Phaser.GameObjects.Container
   private dungeonPanel!: Phaser.GameObjects.Container
   private staminaText!: Phaser.GameObjects.Text
   private statusText!: Phaser.GameObjects.Text
@@ -40,6 +42,7 @@ class MiningScene extends Phaser.Scene {
   private stairsTitleText!: Phaser.GameObjects.Text
   private stairsAdvanceButtonText!: Phaser.GameObjects.Text
   private inventoryRows!: Phaser.GameObjects.Container
+  private resultRows!: Phaser.GameObjects.Container
   private selectedDungeonText!: Phaser.GameObjects.Text
   private selectedDungeon: DungeonDefinition = DUNGEONS[0]
   private debugSeedControls: DebugSeedControls | null = null
@@ -94,10 +97,11 @@ class MiningScene extends Phaser.Scene {
     this.createDungeonPanel()
     this.createStairsPanel()
     this.createFailurePanel()
+    this.createResultPanel()
     // 盤面カメラだけをプレイヤーに追従させ、HUDとポップアップは画面位置に固定する。
     this.uiCamera = this.cameras.add(0, 0, this.scale.width, this.scale.height, false, 'ui')
     this.cameras.main.ignore([
-      this.baseLayer, this.stairsPanel, this.failurePanel, this.inventoryPanel, this.dungeonPanel,
+      this.baseLayer, this.stairsPanel, this.failurePanel, this.inventoryPanel, this.resultPanel, this.dungeonPanel,
       this.staminaText, this.statusText, this.costPreviewText, this.detectorText, this.resourceCountText, this.runSeedText,
       this.modeControl,
     ])
@@ -129,8 +133,9 @@ class MiningScene extends Phaser.Scene {
       }
     })
     if (import.meta.env.DEV) {
-      const gameRoot = document.getElementById('game')
-      if (gameRoot) this.debugSeedControls = new DebugSeedControls(gameRoot, seed => this.beginExpedition(seed))
+      // Canvasの上に重ねず、ゲーム画面の下に置いて拠点ボタンを覆わないようにする。
+      const appRoot = document.getElementById('app')
+      if (appRoot) this.debugSeedControls = new DebugSeedControls(appRoot, seed => this.beginExpedition(seed))
     }
   }
 
@@ -255,10 +260,10 @@ class MiningScene extends Phaser.Scene {
     this.inventoryPanel.add(this.inventoryRows)
     const closeButton = this.add.rectangle(0, 215, 220, 42, 0x53685c).setStrokeStyle(1, 0xd4c29b)
       .setInteractive({ useHandCursor: true })
-    const closeLabel = this.add.text(0, 215, '閉じる', {
+    const closeLabel = this.add.text(0, 215, '拠点に戻る', {
       fontFamily: 'sans-serif', fontSize: '16px', color: '#fff8e9',
     }).setOrigin(0.5)
-    closeButton.on('pointerdown', () => this.inventoryPanel.setVisible(false))
+    closeButton.on('pointerdown', () => this.showBaseScreen())
     this.inventoryPanel.add([closeButton, closeLabel])
     // 拠点より後ろに重ならないよう、アイテム一覧をUIの前面に配置する。
     this.inventoryPanel.setDepth(10)
@@ -267,6 +272,7 @@ class MiningScene extends Phaser.Scene {
 
   private showInventory(): void {
     this.updateInventoryList()
+    this.baseLayer.setVisible(false)
     this.inventoryPanel.setVisible(true)
     this.layoutOverlays()
   }
@@ -350,6 +356,28 @@ class MiningScene extends Phaser.Scene {
     this.inventoryPanel.setVisible(false)
   }
 
+  private createResultPanel(): void {
+    // 探索で得た宝を確認してから拠点へ戻るリザルト画面。
+    this.resultPanel = this.add.container(this.scale.width / 2, this.scale.height / 2)
+    this.resultPanel.add(this.add.rectangle(0, 0, 340, 400, 0x233732, 0.99).setStrokeStyle(2, 0xc49a53).setInteractive())
+    this.resultPanel.add(this.add.text(0, -168, '探索リザルト', {
+      fontFamily: 'sans-serif', fontSize: '25px', fontStyle: 'bold', color: '#f6d878',
+    }).setOrigin(0.5))
+    this.resultPanel.add(this.add.text(0, -128, '今回手に入れた宝', {
+      fontFamily: 'sans-serif', fontSize: '16px', color: '#f4ead3',
+    }).setOrigin(0.5))
+    this.resultRows = this.add.container(-140, -105)
+    this.resultPanel.add(this.resultRows)
+    const button = this.add.rectangle(0, 158, 230, 46, 0xb87a38).setStrokeStyle(2, 0xf0c16e)
+      .setInteractive({ useHandCursor: true })
+    const label = this.add.text(0, 158, '確認', {
+      fontFamily: 'sans-serif', fontSize: '18px', fontStyle: 'bold', color: '#fff8e9',
+    }).setOrigin(0.5)
+    button.on('pointerdown', () => this.showBaseScreen())
+    this.resultPanel.add([button, label])
+    this.resultPanel.setDepth(20).setVisible(false)
+  }
+
   private addChoiceButton(label: string, y: number, onClick: () => void): Phaser.GameObjects.Text {
     const button = this.add.rectangle(0, y, 250, 46, 0x53685c).setStrokeStyle(1, 0xd4c29b)
       .setInteractive({ useHandCursor: true })
@@ -367,6 +395,8 @@ class MiningScene extends Phaser.Scene {
     this.baseLayer.setPosition(this.scale.width / 2, this.scale.height / 2).setScale(scale)
     this.stairsPanel.setPosition(this.scale.width / 2, this.scale.height / 2).setScale(scale)
     this.failurePanel.setPosition(this.scale.width / 2, this.scale.height / 2).setScale(scale)
+    this.resultPanel.setPosition(this.scale.width / 2, this.scale.height / 2)
+      .setScale(Math.min(1, (this.scale.width - 24) / 340, (this.scale.height - 24) / 400))
     const inventoryScale = Math.min(1, (this.scale.width - 24) / 340, (this.scale.height - 24) / 480)
     this.inventoryPanel.setPosition(this.scale.width / 2, this.scale.height / 2).setScale(inventoryScale)
     const dungeonScale = Math.min(1, (this.scale.width - 24) / 340, (this.scale.height - 24) / 360)
@@ -417,14 +447,60 @@ class MiningScene extends Phaser.Scene {
   }
 
   private returnToBase(): void {
-    // UIを拠点へ切り替える。探索中の盤面は次回出発時に新しく生成される。
+    // 帰還を選んだ時点で報酬を保管し、その内容をリザルトに表示する。
+    this.showResult()
     this.expedition.returnToBase()
-    this.showBaseScreen()
+  }
+
+  private showResult(includeGreatTreasure = false): void {
+    this.resultRows.removeAll(true)
+    const items = Object.entries(this.expedition.carriedItems).filter(([, count]) => count > 0)
+    let y = 0
+    if (items.length === 0 && !includeGreatTreasure) {
+      this.resultRows.add(this.add.text(0, y, '宝はありません', {
+        fontFamily: 'sans-serif', fontSize: '14px', color: '#c8d1c8',
+      }))
+    } else {
+      for (const [itemId, count] of items) {
+        if (this.textures.exists(itemId)) {
+          this.resultRows.add(this.add.image(9, y + 9, itemId).setDisplaySize(18, 18))
+        }
+        this.resultRows.add(this.add.text(0, y, `${getItemName(itemId)} × ${count}`, {
+          fontFamily: 'sans-serif', fontSize: '14px', color: '#f4ead3',
+          wordWrap: { width: 280 },
+        }).setPosition(this.textures.exists(itemId) ? 24 : 0, y))
+        y += 24
+      }
+      if (includeGreatTreasure) {
+        const itemId = this.selectedDungeon.largeTreasure
+        if (this.textures.exists(itemId)) {
+          this.resultRows.add(this.add.image(9, y + 9, itemId).setDisplaySize(18, 18))
+        }
+        this.resultRows.add(this.add.text(this.textures.exists(itemId) ? 24 : 0, y, getItemName(itemId), {
+          fontFamily: 'sans-serif', fontSize: '14px', color: '#f6d878',
+          wordWrap: { width: 280 },
+        }))
+      }
+    }
+    this.stairsPanel.setVisible(false)
+    this.boardLayer.setVisible(false)
+    this.characterMarker.setVisible(false)
+    this.staminaText.setVisible(false)
+    this.statusText.setVisible(false)
+    this.costPreviewText.setVisible(false)
+    this.detectorText.setVisible(false)
+    this.modeControl.setVisible(false)
+    this.resourceCountText.setVisible(false)
+    this.runSeedText.setVisible(false)
+    this.baseLayer.setVisible(false)
+    this.resultPanel.setVisible(true)
+    this.layoutOverlays()
   }
 
   private returnToBaseAfterFailure(): void {
     // 失敗時は今回の宝を持ち帰れないため、通常の帰還処理を通さない。
     this.expedition.failExpedition()
+    this.resultPanel.setVisible(false)
     this.showBaseScreen()
   }
 
@@ -433,6 +509,7 @@ class MiningScene extends Phaser.Scene {
     this.stairsPanel.setVisible(false)
     this.failurePanel.setVisible(false)
     this.inventoryPanel.setVisible(false)
+    this.resultPanel.setVisible(false)
     this.dungeonPanel.setVisible(false)
     this.boardLayer.setVisible(false)
     this.characterMarker.setVisible(false)
@@ -597,7 +674,10 @@ class MiningScene extends Phaser.Scene {
     // モデルの採掘結果を反映し、取得物・キャラクター位置・表示を同期する。
     const cell = this.board.cells[index]
     this.board.dig(index)
-    if (cell.kind === 'treasure' && cell.revealed && cell.itemId) this.expedition.collectTreasure(cell.itemId)
+    if (cell.kind === 'treasure' && cell.revealed && cell.itemId) {
+      this.expedition.collectTreasure(cell.itemId)
+      this.showItemPickup(cell.itemId)
+    }
     this.characterIndex = index
     this.moveMarkerTo(index)
     this.drawBoard()
@@ -607,6 +687,42 @@ class MiningScene extends Phaser.Scene {
       this.layoutOverlays()
       return
     }
+  }
+
+  private showItemPickup(itemId: string): void {
+    // 連続取得時は古い表示を置き換え、現在のキャラクター位置に追従させる。
+    if (this.itemPickupPopup) {
+      this.tweens.killTweensOf(this.itemPickupPopup)
+      this.itemPickupPopup.destroy()
+    }
+
+    const popup = this.add.container(0, -34)
+    const name = getItemName(itemId)
+    const hasIcon = this.textures.exists(itemId)
+    const width = Math.max(112, Math.min(230, 34 + name.length * 15 + (hasIcon ? 24 : 0)))
+    popup.add(this.add.rectangle(0, 0, width, 32, 0x172322, 0.94).setStrokeStyle(1, 0xf6d878))
+    let textX = -width / 2 + 10
+    if (hasIcon) {
+      popup.add(this.add.image(textX + 10, 0, itemId).setDisplaySize(20, 20))
+      textX += 25
+    }
+    popup.add(this.add.text(textX, 0, name, {
+      fontFamily: 'sans-serif', fontSize: '13px', fontStyle: 'bold', color: '#fff0a8',
+      wordWrap: { width: width - (textX + width / 2) - 8 },
+    }).setOrigin(0, 0.5))
+    this.characterMarker.add(popup)
+    this.itemPickupPopup = popup
+    this.tweens.add({
+      targets: popup,
+      alpha: 0,
+      delay: 1000,
+      duration: 500,
+      ease: 'Linear',
+      onComplete: () => {
+        popup.destroy()
+        if (this.itemPickupPopup === popup) this.itemPickupPopup = null
+      },
+    })
   }
 
   private updateStatus(): void {
@@ -642,8 +758,8 @@ class MiningScene extends Phaser.Scene {
     // 階段を下りる。最深層を下りる場合は大宝を確定入手して帰還する。
     if (this.expedition.floor >= this.selectedDungeon.stages.length) {
       this.expedition.collectGreatTreasure(this.selectedDungeon.largeTreasure)
+      this.showResult(true)
       this.expedition.returnToBase()
-      this.showBaseScreen()
       return
     }
 
